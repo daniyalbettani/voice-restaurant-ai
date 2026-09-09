@@ -1,0 +1,101 @@
+1) How to setup the vite 
+Inside the front end folder, do these steps => npm create vite@latest . -- -- template react
+note (. refers to install the project packages to the current folder, do not create the sub folder in front-end folder)
+
+2) How to setup the tailwind CSS for the project 
+=>npm install @tailwindcss/vite tailwindcss
+=>Updated Vite Configuration I opened the file vite.config.js and told Vite to use the Tailwind plugin. I added these two lines:
+import tailwindcss from '@tailwindcss/vite' // <-- Imported it
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(), // <-- Added it here
+  ],
+})
+=>Updated the Main CSS File I opened src/index.css and replaced everything with a single line:
+
+@import "tailwindcss";
+Why? In version 3, we had to use @tailwind base; etc. In version 4, this single line imports the entire Tailwind engine into our app.
+
+3) Step 3: Installing React Router
+Since our app will have two entirely different views—a Customer Interface and a Kitchen Admin Dashboard—we need a way to switch between
+them without reloading the page. For this, we use React Router.
+
+Your Action:
+=>. Install React Router Open a new terminal window (leave your npm run dev server running in the first one)
+and make sure you are in the front-end folder. Run: npm install react-router-dom
+ Create our Folders Inside your src folder, create two new folders to keep our code organized:
+
+src/pages (for full screen pages)
+src/components (for smaller reusable parts like buttons or the cart)
+
+=>  Create Placeholder Pages Inside the src/pages folder, create two new files:
+
+CustomerPage.jsx
+AdminDashboard.jsx
+
+=> add something in these pages like adding divs of saying something about the pages.
+
+4) (REACT ROUTER) Now we have to cover the navigation process...Setup React Router in App.jsx Now, instead of just showing one page,
+we want our app to be smart enough to show the Customer Page on the main URL (/), and the Dashboard on the /admin URL.
+
+----How Traditional Websites Work vs. React----
+In older, traditional websites, every time you click a link, your browser has to talk to the server, download a completely new HTML file,
+and the entire screen goes white for a second while it reloads.
+
+React does something much cooler. It creates a Single Page Application (SPA). This means the browser only ever loads one actual web page.
+When you click a button to go to a new screen, React doesn't reload the page—it just instantly swaps out the code on the screen.
+It feels incredibly fast, almost like a mobile app!
+
+---Why do we need React Router?---
+
+Because React never actually refreshes the page, the URL bar at the top of your browser wouldn't naturally change.
+You would be stuck on http://localhost:5173/ forever, even if you clicked a button to open the Kitchen Dashboard.
+
+React Router is a library (a pre-written tool) that does two magic things:
+.> It safely changes the text in your URL bar (like adding /admin) without causing the page to reload.
+.> It watches that URL bar. If it sees /admin, it instantly says, "Aha! Take the Customer code off the screen and put the Admin code on the screen."
+
+// 1. We import three specific tools from the 'react-router-dom' library we just installed
+
+	import { BrowserRouter, Routes, Route } from 'react-router-dom'
+    	<BrowserRouter> // BrowserRouter: This is the "Engine". It wraps your whole app and constantly watches the URL bar.
+    	
+      
+      	<Routes> {/* Routes: This is like a "Switchboard". It holds all your possible page rules. */}
+      
+        
+        {/* Route: This is an individual rule. */}
+        {/* It says: "IF the path is exactly '/' (the home page), THEN show the <CustomerPage />" */}
+        <Route path="/" element={<CustomerPage />} />
+        
+        {/* It says: "IF the path is '/admin', THEN show the <AdminDashboard /> instead" */}
+        <Route path="/admin" element={<AdminDashboard />} />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

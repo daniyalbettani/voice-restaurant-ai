@@ -10,6 +10,8 @@ const PRESET_AVATARS = [
   '🌈','🔥','💫','🎯','🎲','🚀','💎','🌺',
 ];
 
+const STATUS_COLOR = { pending:'#f59e0b', preparing:'#3b82f6', ready:'#8b5cf6', done:'#22c55e', cancelled:'#dc2626' };
+
 const UserProfileModal = ({ isOpen, onClose }) => {
   const { user, token, logout } = useAuth();
   const [name,       setName]       = useState('');
@@ -19,8 +21,12 @@ const UserProfileModal = ({ isOpen, onClose }) => {
   const [msg,        setMsg]        = useState({ text: '', type: '' });
   const [nameMsg,    setNameMsg]    = useState('');
   const [showPicker, setShowPicker] = useState(false);
+  const [tab,        setTab]        = useState('profile');  // 'profile' | 'orders'
+  const [orders,     setOrders]     = useState([]);
+  const [ordLoad,    setOrdLoad]    = useState(false);
   const fileRef = useRef(null);
 
+  // Reset all state when user changes or modal opens — prevents cross-user leakage
   useEffect(() => {
     if (user && isOpen) {
       setName(user.name || '');
@@ -29,8 +35,23 @@ const UserProfileModal = ({ isOpen, onClose }) => {
       setShowPicker(false);
       setNameMsg('');
       setMsg({ text: '', type: '' });
+      setTab('profile');
+      setOrders([]);  // wipe previous user's orders immediately
     }
   }, [user, isOpen]);
+
+  // Fetch order history when tab switches to 'orders' — scoped to current user
+  useEffect(() => {
+    if (tab !== 'orders' || !user) return;
+    setOrders([]);    // clear stale data before fresh fetch
+    setOrdLoad(true);
+    const uid = user._id || user.id;
+    fetch(`${API}/api/orders/user/${uid}`)
+      .then(r => r.json())
+      .then(d => setOrders(Array.isArray(d) ? d : []))
+      .catch(() => setOrders([]))
+      .finally(() => setOrdLoad(false));
+  }, [tab, user]);
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
@@ -130,6 +151,39 @@ const UserProfileModal = ({ isOpen, onClose }) => {
     finally { setLoading(false); }
   };
 
+  const handleCancelOrder = async (orderId) => {
+    const order = orders.find(o => o._id === orderId);
+    if (!order) return;
+
+    // Client-side 5-minute window guard
+    const elapsed = Date.now() - new Date(order.createdAt).getTime();
+    if (elapsed > 5 * 60 * 1000) {
+      flash('⏰ Cancellation window has expired (5 min limit).', 'error');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to cancel this order?')) return;
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) { console.error('JSON parse error:', e); }
+
+      if (res.ok) {
+        setOrders(prev => prev.map(o => o._id === orderId ? { ...o, status: 'cancelled' } : o));
+        flash('✅ Order cancelled successfully!');
+      } else {
+        flash(data.message || 'Failed to cancel order.', 'error');
+      }
+    } catch (err) {
+      console.error('Cancel order error:', err);
+      flash('Could not reach server. Please try again.', 'error');
+    }
+  };
+
+
   const isPhotoChanged = avatar !== (user.avatarUrl || '');
   const daysLeft = user.nameChangedAt
     ? Math.max(0, 7 - Math.floor((Date.now() - new Date(user.nameChangedAt)) / 86400000))
@@ -172,6 +226,19 @@ const UserProfileModal = ({ isOpen, onClose }) => {
         <div style={{ padding:'22px 26px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0 }}>
           <h2 style={{ fontWeight:800,fontSize:'19px' }}>👤 My Profile</h2>
           <button onClick={onClose} style={{ background:'var(--card)',border:'1px solid var(--border)',borderRadius:'8px',padding:'6px 12px',color:'var(--text2)',cursor:'pointer',fontSize:'13px',fontFamily:'Inter,sans-serif' }}>✕</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display:'flex',gap:'6px',padding:'14px 26px 0',flexShrink:0 }}>
+          {[['profile','👤 Profile'],['orders','📦 Orders']].map(([id,label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              padding:'8px 18px',borderRadius:'10px',fontSize:'13px',fontWeight:700,
+              fontFamily:'Inter,sans-serif',cursor:'pointer',transition:'all 0.2s',
+              background: tab===id ? 'linear-gradient(135deg,#f97316,#ea580c)' : 'var(--card)',
+              border: tab===id ? 'none' : '1px solid var(--border)',
+              color: tab===id ? '#fff' : 'var(--text2)',
+            }}>{label}</button>
+          ))}
         </div>
 
         {/* Avatar section */}
@@ -237,48 +304,97 @@ const UserProfileModal = ({ isOpen, onClose }) => {
           </div>
         )}
 
-        {/* Form fields */}
-        <div style={{ padding:'20px 26px',flex:1,display:'flex',flexDirection:'column',gap:'20px' }}>
+        {/* Profile tab form fields — hidden while on orders tab */}
+        {tab === 'profile' && (
+          <div style={{ padding:'20px 26px',flex:1,display:'flex',flexDirection:'column',gap:'20px' }}>
 
-          {/* Name */}
-          <div>
-            <label style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',display:'block',marginBottom:'7px' }}>Display Name</label>
-            <div style={{ display:'flex',gap:'8px' }}>
-              <input value={name} onChange={e => setName(e.target.value)} style={{ ...inp,flex:1 }} disabled={daysLeft>0}
-                placeholder="Your name"
-                onFocus={e=>e.target.style.borderColor='var(--orange)'}
-                onBlur={e=>e.target.style.borderColor='var(--border)'} />
-              <button onClick={handleSaveName} disabled={loading||daysLeft>0||name===user.name} style={btnOrange}>Save</button>
-            </div>
-            {daysLeft > 0
-              ? <p style={{ color:'var(--yellow)',fontSize:'12px',marginTop:'5px' }}>🔒 Can change again in {daysLeft} day{daysLeft>1?'s':''}</p>
-              : nameMsg ? <p style={{ color:'var(--red)',fontSize:'12px',marginTop:'5px' }}>⚠️ {nameMsg}</p> : null
-            }
-          </div>
-
-          {/* Email */}
-          <div>
-            <label style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',display:'block',marginBottom:'7px' }}>Email Address</label>
-            <div style={{ display:'flex',gap:'8px' }}>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp,flex:1 }}
-                placeholder="your@email.com"
-                onFocus={e=>e.target.style.borderColor='var(--orange)'}
-                onBlur={e=>e.target.style.borderColor='var(--border)'} />
-              <button onClick={handleSaveEmail} disabled={loading||email===user.email} style={btnOrange}>Save</button>
-            </div>
-          </div>
-
-          {/* Info */}
-          <div style={{ background:'var(--bg2)',borderRadius:'11px',padding:'14px',border:'1px solid var(--border)' }}>
-            <div style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',marginBottom:'10px' }}>Account Info</div>
-            {[['📱 Phone', user.phone||'Not provided'],['🗓️ Member since', new Date(user.createdAt||Date.now()).toLocaleDateString('en-US',{year:'numeric',month:'long'})],['🔐 Password','••••••••']].map(([k,v])=>(
-              <div key={k} style={{ display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid var(--border)',fontSize:'13px' }}>
-                <span style={{ color:'var(--text2)' }}>{k}</span>
-                <span style={{ color:'var(--text)',maxWidth:'55%',textAlign:'right',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{v}</span>
+            {/* Name */}
+            <div>
+              <label style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',display:'block',marginBottom:'7px' }}>Display Name</label>
+              <div style={{ display:'flex',gap:'8px' }}>
+                <input value={name} onChange={e => setName(e.target.value)} style={{ ...inp,flex:1 }} disabled={daysLeft>0}
+                  placeholder="Your name"
+                  onFocus={e=>e.target.style.borderColor='var(--orange)'}
+                  onBlur={e=>e.target.style.borderColor='var(--border)'} />
+                <button onClick={handleSaveName} disabled={loading||daysLeft>0||name===user.name} style={btnOrange}>Save</button>
               </div>
-            ))}
+              {daysLeft > 0
+                ? <p style={{ color:'var(--yellow)',fontSize:'12px',marginTop:'5px' }}>🔒 Can change again in {daysLeft} day{daysLeft>1?'s':''}</p>
+                : nameMsg ? <p style={{ color:'var(--red)',fontSize:'12px',marginTop:'5px' }}>⚠️ {nameMsg}</p> : null
+              }
+            </div>
+
+            {/* Email */}
+            <div>
+              <label style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',display:'block',marginBottom:'7px' }}>Email Address</label>
+              <div style={{ display:'flex',gap:'8px' }}>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp,flex:1 }}
+                  placeholder="your@email.com"
+                  onFocus={e=>e.target.style.borderColor='var(--orange)'}
+                  onBlur={e=>e.target.style.borderColor='var(--border)'} />
+                <button onClick={handleSaveEmail} disabled={loading||email===user.email} style={btnOrange}>Save</button>
+              </div>
+            </div>
+
+            {/* Account Info */}
+            <div style={{ background:'var(--bg2)',borderRadius:'11px',padding:'14px',border:'1px solid var(--border)' }}>
+              <div style={{ fontSize:'11px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'1px',marginBottom:'10px' }}>Account Info</div>
+              {[['📱 Phone', user.phone||'Not provided'],['🗓️ Member since', new Date(user.createdAt||Date.now()).toLocaleDateString('en-US',{year:'numeric',month:'long'})],['🔐 Password','••••••••']].map(([k,v])=>(
+                <div key={k} style={{ display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid var(--border)',fontSize:'13px' }}>
+                  <span style={{ color:'var(--text2)' }}>{k}</span>
+                  <span style={{ color:'var(--text)',maxWidth:'55%',textAlign:'right',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{v}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Order History Tab */}
+        {tab === 'orders' && (
+          <div style={{ flex:1,overflowY:'auto',padding:'20px 26px' }}>
+            {ordLoad ? (
+              <div style={{ textAlign:'center',padding:'40px',color:'var(--text2)' }}>⏳ Loading orders…</div>
+            ) : orders.length === 0 ? (
+              <div style={{ textAlign:'center',padding:'60px 20px' }}>
+                <div style={{ fontSize:'56px',marginBottom:'12px' }}>📭</div>
+                <h3 style={{ fontWeight:700,fontSize:'17px',marginBottom:'8px' }}>No orders yet</h3>
+                <p style={{ color:'var(--text2)',fontSize:'14px' }}>Place an order from the menu or voice assistant!</p>
+              </div>
+            ) : (
+              <div style={{ display:'flex',flexDirection:'column',gap:'12px' }}>
+                {orders.map(o => (
+                  <div key={o._id} style={{ padding:'14px',background:'var(--bg2)',borderRadius:'12px',border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px' }}>
+                      <span style={{ fontWeight:700,fontSize:'13px',color:'var(--text3)',fontFamily:'monospace' }}>#{o._id.slice(-6).toUpperCase()}</span>
+                      <span style={{ padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:700,
+                        background:`${STATUS_COLOR[o.status]}22`,color:STATUS_COLOR[o.status],border:`1px solid ${STATUS_COLOR[o.status]}55` }}>
+                        {o.status}
+                      </span>
+                    </div>
+                    {o.items.map((item,i) => (
+                      <div key={i} style={{ display:'flex',justifyContent:'space-between',fontSize:'13px',padding:'3px 0',color:'var(--text2)' }}>
+                        <span style={{ textTransform:'capitalize' }}>{item.quantity} × {item.name}</span>
+                        <span>Rs {item.price * item.quantity}</span>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex',justifyContent:'space-between',marginTop:'8px',paddingTop:'8px',borderTop:'1px solid var(--border)',fontSize:'13px',alignItems:'center' }}>
+                      <span style={{ color:'var(--text3)' }}>{new Date(o.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+                      <div style={{ display:'flex',alignItems:'center',gap:'8px' }}>
+                        {['pending', 'preparing'].includes(o.status) && (
+                          <button onClick={() => handleCancelOrder(o._id)} style={{
+                            background:'rgba(239,68,68,0.1)',color:'#ef4444',border:'1px solid rgba(239,68,68,0.25)',
+                            borderRadius:'6px',padding:'4px 8px',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif'
+                          }}>Cancel Order</button>
+                        )}
+                        <span style={{ fontWeight:700,color:'var(--orange-light)' }}>Rs {o.total}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div style={{ padding:'18px 26px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:'9px',flexShrink:0 }}>

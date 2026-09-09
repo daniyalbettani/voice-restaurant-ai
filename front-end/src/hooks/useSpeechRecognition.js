@@ -25,29 +25,58 @@ export const useSpeechRecognition = (onResult, lang = 'en-US') => {
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = overrideLang || lang;
-    recognition.continuous = false;
+    recognition.continuous = true;       // Keep listening through pauses
     recognition.interimResults = false;
-    recognition.maxAlternatives = 3; // get up to 3 guesses for accent tolerance
+    recognition.maxAlternatives = 3;
+
+    let finalTranscript = '';
+    let silenceTimer = null;
 
     recognition.onstart = () => setListening(true);
-    recognition.onend   = () => setListening(false);
+    recognition.onend   = () => {
+      setListening(false);
+      if (silenceTimer) clearTimeout(silenceTimer);
+      
+      const trimmed = finalTranscript.trim();
+      if (trimmed) {
+        if (onResultRef.current) onResultRef.current(trimmed);
+      } else {
+        if (onResultRef.current) onResultRef.current('__no_speech__');
+      }
+    };
+
     recognition.onerror = (e) => {
       console.error('Speech error:', e.error);
       setListening(false);
-      if (e.error === 'no-speech') {
+      if (e.error === 'no-speech' && !finalTranscript.trim()) {
         if (onResultRef.current) onResultRef.current('__no_speech__');
       }
     };
 
     recognition.onresult = (event) => {
-      // Use the best alternative
-      const transcript = event.results[0][0].transcript;
-      setListening(false);
-      if (onResultRef.current) onResultRef.current(transcript);
+      let currentResult = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          currentResult += event.results[i][0].transcript + ' ';
+        }
+      }
+      finalTranscript += currentResult;
+
+      // Reset the silence timer on each new speech segment
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        recognition.stop(); // Stops capturing and triggers onend
+      }, 3500); // 3.5 seconds of absolute silence means user is done speaking
     };
 
     recognition.start();
   };
 
-  return { listening, startListening, speak };
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+  };
+
+  return { listening, startListening, stopListening, speak };
 };

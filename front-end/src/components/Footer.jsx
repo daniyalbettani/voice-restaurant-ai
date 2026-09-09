@@ -1,6 +1,27 @@
 import { Link } from 'react-router-dom';
 
+// Returns the active super_admin user from EITHER session
+const isSuperAdmin = () => {
+  try {
+    // 1. Check admin portal session
+    const adminRaw = localStorage.getItem('vb_admin_user');
+    if (adminRaw && adminRaw !== 'null' && adminRaw !== 'undefined') {
+      const adminUser = JSON.parse(adminRaw);
+      if (adminUser?.role === 'super_admin') return true;
+    }
+    // 2. Check customer portal session (super_admin can also log in via main site)
+    const userRaw = localStorage.getItem('vb_user');
+    if (userRaw && userRaw !== 'null' && userRaw !== 'undefined') {
+      const user = JSON.parse(userRaw);
+      if (user?.role === 'super_admin') return true;
+    }
+    return false;
+  } catch { return false; }
+};
+
 const Footer = () => {
+  const showDashboard = isSuperAdmin();
+
   return (
     <footer className="footer">
       <div className="footer-logo gradient-text">🍽️ VoiceBite AI</div>
@@ -9,6 +30,7 @@ const Footer = () => {
       </p>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', flexWrap: 'wrap', marginBottom: '32px' }}>
+        {/* Navigation */}
         <div>
           <div style={{ color: 'var(--text2)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Navigation</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -22,22 +44,29 @@ const Footer = () => {
           </div>
         </div>
 
+        {/* Portal */}
         <div>
           <div style={{ color: 'var(--text2)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Portal</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <Link to="/admin/login" style={{ color: 'var(--text3)', fontSize: '14px', textDecoration: 'none', transition: 'color 0.2s' }}
+            <Link to="/admin/login"
+              style={{ color: 'var(--text3)', fontSize: '14px', textDecoration: 'none', transition: 'color 0.2s' }}
               onMouseEnter={e => e.target.style.color = 'var(--orange-light)'}
               onMouseLeave={e => e.target.style.color = 'var(--text3)'}>
-              🔐 Admin Panel
+              🔐 Admin Login
             </Link>
-            <Link to="/admin" style={{ color: 'var(--text3)', fontSize: '14px', textDecoration: 'none' }}
-              onMouseEnter={e => e.target.style.color = 'var(--orange-light)'}
-              onMouseLeave={e => e.target.style.color = 'var(--text3)'}>
-              📊 Dashboard
-            </Link>
+            {/* Dashboard — visible ONLY to super_admin */}
+            {showDashboard && (
+              <Link to="/admin"
+                style={{ color: 'var(--orange-light)', fontSize: '14px', textDecoration: 'none', fontWeight: 700, transition: 'color 0.2s' }}
+                onMouseEnter={e => e.target.style.color = '#fbbf24'}
+                onMouseLeave={e => e.target.style.color = 'var(--orange-light)'}>
+                👑 Super Admin Dashboard
+              </Link>
+            )}
           </div>
         </div>
 
+        {/* Tech Stack */}
         <div>
           <div style={{ color: 'var(--text2)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Tech Stack</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

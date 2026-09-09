@@ -1,27 +1,19 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema({
-  items: [
-    {
-      name: String,
-      quantity: Number,
-      price: Number,
-    },
-  ],
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  items: [{ name: String, quantity: Number, price: Number }],
   total: Number,
   status: {
     type: String,
-    enum: ["pending", "preparing", "ready", "done"],
+    enum: ["pending", "preparing", "ready", "done", "cancelled"],
     default: "pending",
   },
-  customerNote: {
-    type: String,
-    default: "",
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  customerNote: { type: String, default: "" },
+  source: { type: String, enum: ["cart", "voice", "chat"], default: "cart" },
+  // locked: true = customer clicked "Final Confirm" — no cancellation allowed, chef starts immediately
+  locked: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
 });
 
-module.exports = mongoose.model("Order", orderSchema);
+export const Order = mongoose.model("Order", orderSchema);

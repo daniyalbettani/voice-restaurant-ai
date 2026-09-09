@@ -7,6 +7,7 @@ import VoiceAssistant from '../components/voiceAssistant';
 import MenuSection from '../components/MenuSection';
 import Testimonials from '../components/Testimonials';
 import Footer from '../components/Footer';
+import ChatBot from '../components/ChatBot';
 
 const Home = () => {
   return (
@@ -20,6 +21,7 @@ const Home = () => {
       <MenuSection />
       <Testimonials />
       <Footer />
+      <ChatBot />
     </div>
   );
 };
