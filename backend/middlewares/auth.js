@@ -9,8 +9,8 @@ export const authMiddleware = (req, res, next) => {
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
-  } catch {
-    res.status(401).json({ message: "Invalid or expired token" });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
 
@@ -21,12 +21,14 @@ export const staffMiddleware = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (!["staff", "sub_admin", "super_admin"].includes(decoded.role)) {
-      return res.status(403).json({ message: "Access denied. Staff/Admin only." });
+      return res
+        .status(403)
+        .json({ message: "Access denied. Staff/Admin only." });
     }
     req.user = decoded;
     next();
-  } catch {
-    res.status(401).json({ message: "Invalid token" });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid token" });
   }
 };
 
@@ -37,11 +39,13 @@ export const superAdminMiddleware = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (decoded.role !== "super_admin") {
-      return res.status(403).json({ message: "Access denied. Super admin only." });
+      return res
+        .status(403)
+        .json({ message: "Access denied. Super admin only." });
     }
     req.user = decoded;
     next();
-  } catch {
-    res.status(401).json({ message: "Invalid token" });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid token" });
   }
 };

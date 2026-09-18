@@ -16,38 +16,61 @@ const emailHtml = (name, otp) => `
 
 const createTransporter = () => {
   const { EMAIL_USER: u, EMAIL_PASS: p } = process.env;
-  if (u && u !== "your_gmail@gmail.com" && p && p !== "your_gmail_app_password_16_chars") {
-    return nodemailer.createTransport({ service: "gmail", auth: { user: u, pass: p } });
+  if (
+    u &&
+    u !== "your_gmail@gmail.com" &&
+    p &&
+    p !== "your_gmail_app_password_16_chars"
+  ) {
+    return nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true, // SSL required for cloud hostings like Render
+      auth: { user: u, pass: p },
+      connectionTimeout: 10000, // 10s connection timeout
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+    });
   }
-  return null; // Will fall back to Ethereal test account
+  return null;
 };
 
 export const sendOTPEmail = async (toEmail, otp, name) => {
-  const real = createTransporter();
-  if (real) {
-    await real.sendMail({
-      from: `"VoiceBite AI 🍽️" <${process.env.EMAIL_USER}>`,
-      to: toEmail,
-      subject: "Your VoiceBite OTP Code",
-      html: emailHtml(name, otp),
-    });
-    console.log(`✅ OTP email sent to ${toEmail}`);
-  } else {
-    // Ethereal — free disposable test email, no config needed
-    const testAccount = await nodemailer.createTestAccount();
-    const test = nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-    });
-    const info = await test.sendMail({
-      from: '"VoiceBite AI 🍽️" <noreply@voicebite.ai>',
-      to: toEmail,
-      subject: "Your VoiceBite OTP Code",
-      html: emailHtml(name, otp),
-    });
-    console.log(`\n📧 OTP EMAIL PREVIEW (click to open):\n👉 ${nodemailer.getTestMessageUrl(info)}`);
-    console.log(`📌 OTP for ${toEmail}: ${otp}\n`);
+  try {
+    const real = createTransporter();
+    if (real) {
+      await real.sendMail({
+        from: `"VoiceBite AI 🍽️" <${process.env.EMAIL_USER}>`,
+        to: toEmail,
+        subject: "Your VoiceBite OTP Code",
+        html: emailHtml(name, otp),
+      });
+      console.log(`✅ OTP email successfully sent to ${toEmail}`);
+      return true;
+    } else {
+      // Ethereal fallback for local development
+      const testAccount = await nodemailer.createTestAccount();
+      const test = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+        connectionTimeout: 10000,
+      });
+      const info = await test.sendMail({
+        from: '"VoiceBite AI 🍽️" <noreply@voicebite.ai>',
+        to: toEmail,
+        subject: "Your VoiceBite OTP Code",
+        html: emailHtml(name, otp),
+      });
+      console.log(
+        `\n📧 OTP EMAIL PREVIEW: ${nodemailer.getTestMessageUrl(info)}`,
+      );
+      console.log(`📌 OTP for ${toEmail}: ${otp}\n`);
+      return true;
+    }
+  } catch (error) {
+    console.error("❌ Email Sending Failed:", error.message);
+    throw new Error(`Email dispatch failed: ${error.message}`);
   }
 };
