@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
 
 const emailHtml = (name, otp) => `
   <div style="font-family:Inter,sans-serif;max-width:500px;margin:0 auto;background:#0a0a0f;color:#fff;padding:40px;border-radius:16px;">
@@ -26,8 +27,11 @@ const createTransporter = () => {
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
-      family: 4, // Forces IPv4 to bypass ENETUNREACH IPv6 errors on Render
       auth: { user: u, pass: p },
+      // Explicitly forces DNS resolution to resolve strictly IPv4 addresses
+      lookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4 }, callback);
+      },
       tls: {
         rejectUnauthorized: false,
       },
@@ -66,7 +70,9 @@ export const sendOTPEmail = async (toEmail, otp, name) => {
       host: "smtp.ethereal.email",
       port: 587,
       secure: false,
-      family: 4,
+      lookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4 }, callback);
+      },
       auth: { user: testAccount.user, pass: testAccount.pass },
     });
     const info = await test.sendMail({
