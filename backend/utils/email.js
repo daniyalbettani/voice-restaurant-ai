@@ -25,14 +25,15 @@ const createTransporter = () => {
     return nodemailer.createTransport({
       host: "smtp.gmail.com",
       port: 465,
-      secure: true, // SSL required for cloud hostings like Render
+      secure: true,
+      family: 4, // Forces IPv4 to bypass ENETUNREACH IPv6 errors on Render
       auth: { user: u, pass: p },
       tls: {
-        rejectUnauthorized: false, // Prevents self-signed SSL handshake failures
+        rejectUnauthorized: false,
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 8000,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
     });
   }
   return null;
@@ -53,21 +54,19 @@ export const sendOTPEmail = async (toEmail, otp, name) => {
       return;
     } catch (err) {
       console.error(`⚠️ Gmail SMTP Error on Render: ${err.message}`);
-      console.log(
-        `📌 FALLBACK OTP FOR ${toEmail}: [ ${otp} ] (Check Render Logs if email delayed)`,
-      );
-      // Do not throw error — allow user registration flow to continue
+      console.log(`📌 FALLBACK OTP FOR ${toEmail}: [ ${otp} ]`);
       return;
     }
   }
 
-  // Ethereal fallback for local development
+  // Ethereal fallback for local testing
   try {
     const testAccount = await nodemailer.createTestAccount();
     const test = nodemailer.createTransport({
       host: "smtp.ethereal.email",
       port: 587,
       secure: false,
+      family: 4,
       auth: { user: testAccount.user, pass: testAccount.pass },
     });
     const info = await test.sendMail({
