@@ -8,43 +8,46 @@ const emailHtml = (name, otp) => `
       <div style="font-size:48px;font-weight:900;letter-spacing:12px;color:#f97316;">${otp}</div>
     </div>
     <p style="color:#52525b;font-size:13px;">If you didn't request this, ignore this email.</p>
-    <p style="color:#52525b;font-size:13px;margin-top:24px;">🔒 VoiceBite AI — Secure &amp; Encrypted</p>
   </div>
 `;
 
 export const sendOTPEmail = async (toEmail, otp, name) => {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.BREVO_API_KEY;
 
   if (apiKey) {
     try {
-      const response = await fetch("https://api.resend.com/emails", {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+          accept: "application/json",
+          "api-key": apiKey,
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          from: "VoiceBite AI <onboarding@resend.dev>",
-          to: [toEmail],
+          sender: {
+            name: "VoiceBite AI",
+            email: process.env.EMAIL_USER || "bhittanidaniyal@gmail.com",
+          },
+          to: [{ email: toEmail, name: name || "User" }],
           subject: "Your VoiceBite OTP Code",
-          html: emailHtml(name, otp),
+          htmlContent: emailHtml(name, otp),
         }),
       });
 
       if (response.ok) {
         console.log(
-          `✅ OTP email successfully delivered to ${toEmail} via Resend HTTP API`,
+          `✅ OTP email successfully delivered to ${toEmail} via Brevo API`,
         );
         return;
       } else {
-        const errData = await response.json();
-        console.error(`⚠️ Resend API Error:`, errData);
+        const err = await response.json();
+        console.error("⚠️ Brevo API Error Response:", err);
       }
     } catch (err) {
-      console.error(`⚠️ Resend HTTP Request Failed: ${err.message}`);
+      console.error("⚠️ Brevo Fetch Exception:", err.message);
     }
   }
 
-  // Fallback print in logs if API key is not set or request fails
+  // Backup log in case API key is missing or invalid
   console.log(`📌 FALLBACK OTP FOR ${toEmail}: [ ${otp} ]`);
 };
