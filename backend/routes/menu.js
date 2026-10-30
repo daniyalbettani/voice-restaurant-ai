@@ -2,7 +2,6 @@ import { Router } from "express";
 import multer from "multer";
 import { Menu } from "../models/Menu.js";
 import { uploadFromUrl, uploadBuffer } from "../utils/cloudinary.js";
-import { superAdminMiddleware } from "../middlewares/auth.js";
 
 const router = Router();
 const storage = multer.memoryStorage();
