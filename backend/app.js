@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
 
@@ -16,5 +17,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(cookieParser());
 app.use(express.static("public"));
+
+import authRoutes from "./routes/auth.routes.js";
+
+app.use("/api/v1/auth", authRoutes);
+
+app.use(errorHandler);
 
 export { app };

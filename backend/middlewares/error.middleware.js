@@ -1,26 +1,25 @@
-import { ApiError } from "../utils/ApiError.js"
+import { ApiError } from "../utils/ApiError.js";
 
 const errorHandler = (err, req, res, next) => {
-    let error = err; // ye err ko direct use nahi kar sakte es liye variable may store karte hien aur 
-    // ye err hamare asynHandler ke .catch me se arha hai, next(error) ke vajah se
-    if (!(error instanceof ApiError)) {
-        const statusCode = error.statusCode || 500;
-        const message = error.message || "Internal Server Error";
-        error = new ApiError(statusCode, message, [], err.stack)
-    }
+  let error = err; // ye err ko direct use nahi kar sakte es liye variable may store karte hien aur
+  // ye err hamare asynHandler ke .catch me se arha hai, next(error) ke vajah se
+  if (!(error instanceof ApiError)) {
+    const statusCode = error.statusCode || 500;
+    const message = error.message || "Internal Server Error";
+    error = new ApiError(statusCode, message, [], err.stack);
+  }
 
-    const response = {
-        statusCode: error.statusCode,
-        message: error.message,
-        success: false,
-        error: error.errors,
-        ...(process.env.NODE_ENV === "development" && { stack: error.stack })
-    }
-    return res.status(error.statusCode).json(response);
-}
+  const response = {
+    statusCode: error.statusCode,
+    message: error.message,
+    success: false,
+    error: error.errors,
+    ...(process.env.NODE_ENV === "development" && { stack: error.stack }),
+  };
+  return res.status(error.statusCode).json(response);
+};
 
-export { ApiError }
-
+export { errorHandler };
 
 // Scenario A: You intentionally threw an error
 // You wrote throw new ApiError(400, "Invalid Email") inside a controller.

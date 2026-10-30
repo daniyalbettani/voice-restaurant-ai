@@ -3,7 +3,7 @@ import { app } from "./app.js";
 import http from "http";
 import connectDB from "./db/connect.js";
 import { initSocket } from "./sockets/socket.js";
-import authRouter from "./routes/auth.js";
+// import authRouter from "./routes/auth.js";
 import menuRouter from "./routes/menu.js";
 import orderRouter from "./routes/orders.js";
 import aiRouter from "./routes/ai.js";
@@ -23,7 +23,7 @@ connectDB().then(() =>
 );
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use("/api", authRouter);
+// app.use("/api", authRouter);
 app.use("/api/menu", menuRouter);
 app.use("/api", orderRouter);
 app.use("/api", aiRouter);
