@@ -1,9 +1,12 @@
-// import { Router } from "express";
+import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 // import { User } from "../models/User.js";
 // import { sendOTPEmail } from "../utils/email.js";
-import { authMiddleware, superAdminMiddleware } from "../middlewares/auth.middleware.js";
+import {
+  authMiddleware,
+  superAdminMiddleware,
+} from "../middlewares/auth.middleware.js";
 
 // const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "voicebite_secret_2024";
