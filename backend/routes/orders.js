@@ -1,12 +1,17 @@
 import { Router } from "express";
 import { Order } from "../models/Order.js";
 import { User } from "../models/User.js";
-import { superAdminMiddleware, staffMiddleware } from "../middlewares/auth.js";
+import {
+  superAdminMiddleware,
+  staffMiddleware,
+} from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 let io;
-export const setIo = (socketIo) => { io = socketIo; };
+export const setIo = (socketIo) => {
+  io = socketIo;
+};
 
 // ── POST /api/order OR /api/orders ──────────────────────────────────────────
 // Supports both singular and plural endpoints to prevent 404 errors from the frontend
@@ -48,16 +53,21 @@ router.patch("/orders/:id/cancel", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (["done", "cancelled"].includes(order.status))
-      return res.status(400).json({ message: "Cannot cancel — order is already " + order.status });
+      return res
+        .status(400)
+        .json({ message: "Cannot cancel — order is already " + order.status });
 
     if (order.locked)
       return res.status(400).json({
-        message: "❌ You already confirmed this order — it cannot be cancelled. The chef is cooking!",
+        message:
+          "❌ You already confirmed this order — it cannot be cancelled. The chef is cooking!",
       });
 
     const timeDiffMs = Date.now() - new Date(order.createdAt).getTime();
     if (timeDiffMs > 5 * 60 * 1000)
-      return res.status(400).json({ message: "Cannot cancel — 5-minute cancellation window has expired!" });
+      return res.status(400).json({
+        message: "Cannot cancel — 5-minute cancellation window has expired!",
+      });
 
     order.status = "cancelled";
     await order.save();
@@ -75,7 +85,9 @@ router.patch("/orders/:id/lock", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.status !== "pending")
-      return res.status(400).json({ message: "Only pending orders can be locked." });
+      return res
+        .status(400)
+        .json({ message: "Only pending orders can be locked." });
     if (order.locked)
       return res.status(400).json({ message: "Order is already locked." });
 
@@ -96,7 +108,11 @@ router.patch("/orders/:id/status", async (req, res) => {
     if (!["pending", "preparing", "ready", "done"].includes(status))
       return res.status(400).json({ message: "Invalid status" });
 
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true },
+    );
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (io) io.emit("orderUpdated", order);
     res.json({ message: "Status updated", order });
@@ -135,16 +151,25 @@ router.delete("/orders", superAdminMiddleware, async (req, res) => {
 // ── GET /api/stats (Staff/Admin Protected) ───────────────────────────────────
 router.get("/stats", staffMiddleware, async (req, res) => {
   try {
-    const [total, pending, preparing, ready, done, rev, userCount] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ status: "pending" }),
-      Order.countDocuments({ status: "preparing" }),
-      Order.countDocuments({ status: "ready" }),
-      Order.countDocuments({ status: "done" }),
-      Order.aggregate([{ $group: { _id: null, total: { $sum: "$total" } } }]),
-      User.countDocuments(),
-    ]);
-    res.json({ total, pending, preparing, ready, done, revenue: rev[0]?.total || 0, userCount });
+    const [total, pending, preparing, ready, done, rev, userCount] =
+      await Promise.all([
+        Order.countDocuments(),
+        Order.countDocuments({ status: "pending" }),
+        Order.countDocuments({ status: "preparing" }),
+        Order.countDocuments({ status: "ready" }),
+        Order.countDocuments({ status: "done" }),
+        Order.aggregate([{ $group: { _id: null, total: { $sum: "$total" } } }]),
+        User.countDocuments(),
+      ]);
+    res.json({
+      total,
+      pending,
+      preparing,
+      ready,
+      done,
+      revenue: rev[0]?.total || 0,
+      userCount,
+    });
   } catch {
     res.status(500).json({ message: "Error fetching stats" });
   }
