@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-
+import { asyncHandler } from "../utils/asyncHandler.js";
 // Verifies any logged-in user
 export const verifyJWT = asyncHandler(async (req, _, next) => {
   try {
