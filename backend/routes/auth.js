@@ -4,11 +4,11 @@ import jwt from "jsonwebtoken";
 // import { User } from "../models/User.js";
 // import { sendOTPEmail } from "../utils/email.js";
 import {
-  authMiddleware,
   superAdminMiddleware,
+  verifyJWT,
 } from "../middlewares/auth.middleware.js";
 
-// const router = Router();
+const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "voicebite_secret_2024";
 
 // In-memory OTP store — email → { otp, data, expiresAt }
@@ -219,7 +219,7 @@ router.post("/auth/resend-otp", async (req, res) => {
 // });
 
 // ── GET /api/auth/me ──────────────────────────────────────────────────────────
-router.get("/auth/me", authMiddleware, async (req, res) => {
+router.get("/auth/me", verifyJWT, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -230,7 +230,7 @@ router.get("/auth/me", authMiddleware, async (req, res) => {
 });
 
 // ── PATCH /api/auth/profile ───────────────────────────────────────────────────
-router.patch("/auth/profile", authMiddleware, async (req, res) => {
+router.patch("/auth/profile", verifyJWT, async (req, res) => {
   try {
     const { name, email, avatarUrl } = req.body;
     const user = await User.findById(req.user.id);
@@ -289,7 +289,7 @@ router.patch("/auth/profile", authMiddleware, async (req, res) => {
 });
 
 // ── DELETE /api/auth/account ──────────────────────────────────────────────────
-router.delete("/auth/account", authMiddleware, async (req, res) => {
+router.delete("/auth/account", verifyJWT, async (req, res) => {
   try {
     const target = await User.findById(req.user.id);
     if (!target) return res.status(404).json({ message: "User not found" });
