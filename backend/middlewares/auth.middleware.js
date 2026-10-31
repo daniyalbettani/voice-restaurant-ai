@@ -1,37 +1,32 @@
 import jwt from "jsonwebtoken";
+import { User } from "../models/User.js";
+import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-// Verifies any logged-in user
+
+const JWT_SECRET = process.env.JWT_SECRET_KEY;
+
+// Verifies any logged-in user (reads token from cookie OR Authorization header)
 export const verifyJWT = asyncHandler(async (req, _, next) => {
   try {
-    //Getting the token from two possible places
-    //Why both?
-    // When the frontend is a website (React), tokens are often sent in cookies.
-    // When the frontend is a mobile app or you use tools like Postman/Thunder Client, tokens are usually sent in the Authorization header.
-    // So this code supports both ways.
-    // ------
-    //     req.header("Authorization")?.replace("Bearer ", "")
-    // Reads the Authorization header
-    // The header usually looks like this:
-    // Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-    // .replace("Bearer ", "") removes the word "Bearer " so we only keep the actual token
+    // cookie name is "token" (set by loginUser/verifyOtp with .cookie("token", ...))
     const token =
-      req.cookies?.accessToken ||
+      req.cookies?.token ||
       req.header("Authorization")?.replace("Bearer ", "");
 
     if (!token) {
       throw new ApiError(401, "Invalid Request!");
     }
 
-    const decodedToken = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const decodedToken = jwt.verify(token, JWT_SECRET);
 
-    const user = await User.findById(decodedToken?._id).select(
+    // JWT payload uses "id" (set in generateAccessToken as { id: this._id })
+    const user = await User.findById(decodedToken?.id).select(
       "-password -refreshToken",
     );
     if (!user) {
       throw new ApiError(401, "Invalid Access Token!");
     }
 
-    //req object may user ko add kar do
     req.user = user;
     next();
   } catch (error) {
