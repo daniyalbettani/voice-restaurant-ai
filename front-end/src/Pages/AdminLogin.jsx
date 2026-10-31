@@ -57,7 +57,10 @@ const AdminLogin = () => {
         return;
       }
 
-      const role = data?.user?.role;
+      // Backend wraps response in ApiResponse: { statusCode, success, message, data: { user, token } }
+      const payload = data?.data || data;
+      const role = payload?.user?.role;
+
       if (!role || !["staff", "sub_admin", "super_admin"].includes(role)) {
         setError(
           "⛔ Access denied. You don't have administrative permissions. Contact the owner.",
@@ -67,18 +70,18 @@ const AdminLogin = () => {
       }
 
       const adminData = {
-        id: data.user.id || data.user._id,
-        name: data.user.name,
-        email: data.user.email,
-        role: data.user.role,
+        id: payload.user.id || payload.user._id,
+        name: payload.user.name,
+        email: payload.user.email,
+        role: payload.user.role,
       };
 
       // 1. Save credentials to admin-specific storage
-      localStorage.setItem("vb_admin_token", data.token);
+      localStorage.setItem("vb_admin_token", payload.token);
       localStorage.setItem("vb_admin_user", JSON.stringify(adminData));
 
       // 2. Synchronize credentials to main website storage for Home/Navbar awareness
-      localStorage.setItem("vb_token", data.token);
+      localStorage.setItem("vb_token", payload.token);
       localStorage.setItem("vb_user", JSON.stringify(adminData));
 
       // 3. Notify AuthContext to update session state immediately

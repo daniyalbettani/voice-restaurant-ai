@@ -87,10 +87,17 @@ const AuthModal = ({ isOpen, onClose, defaultTab = 'login' }) => {
         body: JSON.stringify({ email: regEmail, otp }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+      if (!res.ok) throw new Error(data.message || 'OTP verification failed');
+
+      // Backend wraps in ApiResponse: { statusCode, success, message, data: { user, token } }
+      const payload = data.data || data;
+      if (!payload.token || !payload.user) {
+        throw new Error('Invalid server response — please try again.');
+      }
+
       // Auto-login after registration
-      localStorage.setItem('vb_token', data.token);
-      localStorage.setItem('vb_user', JSON.stringify(data.user));
+      localStorage.setItem('vb_token', payload.token);
+      localStorage.setItem('vb_user', JSON.stringify(payload.user));
       window.dispatchEvent(new Event('vb_auth_change'));
       setStep('success');
       setTimeout(onClose, 1500);

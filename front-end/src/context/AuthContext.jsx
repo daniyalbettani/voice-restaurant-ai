@@ -61,17 +61,19 @@ export const AuthProvider = ({ children }) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Login failed");
 
-    // Store customer credentials
-    localStorage.setItem("vb_token", data.token);
-    localStorage.setItem("vb_user", JSON.stringify(data.user));
+    // Backend wraps response in ApiResponse: { statusCode, success, message, data: { user, token } }
+    const payload = data.data || data;
+    const token   = payload.token;
+    const user    = payload.user;
 
-    // 🔒 Purge any stale admin keys if this is a regular customer
-    clearAdminTokensIfCustomer(data.user);
+    localStorage.setItem("vb_token", token);
+    localStorage.setItem("vb_user", JSON.stringify(user));
 
-    setToken(data.token);
-    setUser(data.user);
+    clearAdminTokensIfCustomer(user);
+    setToken(token);
+    setUser(user);
     window.dispatchEvent(new Event("vb_user_change"));
-    return data.user;
+    return user;
   };
 
   const register = async (name, email, password, phone) => {
@@ -83,16 +85,18 @@ export const AuthProvider = ({ children }) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Registration failed");
 
-    localStorage.setItem("vb_token", data.token);
-    localStorage.setItem("vb_user", JSON.stringify(data.user));
+    const payload = data.data || data;
+    const token   = payload.token;
+    const user    = payload.user;
 
-    // 🔒 Purge any stale admin keys on registration
-    clearAdminTokensIfCustomer(data.user);
+    localStorage.setItem("vb_token", token);
+    localStorage.setItem("vb_user", JSON.stringify(user));
 
-    setToken(data.token);
-    setUser(data.user);
+    clearAdminTokensIfCustomer(user);
+    setToken(token);
+    setUser(user);
     window.dispatchEvent(new Event("vb_user_change"));
-    return data.user;
+    return user;
   };
 
   const logout = () => {
