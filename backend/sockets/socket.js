@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import { setIo } from "../routes/orders.js";
+import { setIo } from "../controllers/order.controller.js";
 
 let io;
 
