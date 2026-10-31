@@ -6,7 +6,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendOTPEmail } from "../utils/email.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "voicebite_secret_2024";
+const JWT_SECRET = process.env.JWT_SECRET_KEY || "voicebite_secret_2024";
 
 // In-memory OTP store — email → { otp, data, expiresAt }
 const otpStore = new Map();
@@ -266,7 +266,7 @@ export const resendOtp = asyncHandler(async (req, res) => {
 
 // User name changes logic controller
 
-export const profile = asyncHandler(async (req, res) => {
+export const updateProfile = asyncHandler(async (req, res) => {
   try {
     const { name, email, avatarUrl } = req.body;
     const user = await User.findById(req.user.id);
@@ -326,7 +326,7 @@ export const profile = asyncHandler(async (req, res) => {
 
 // User account deletion controller logic
 
-export const userAccountDeletion = asyncHandler(async (req, res) => {
+export const deleteAccount = asyncHandler(async (req, res) => {
   try {
     const target = await User.findById(req.user.id);
     if (!target) return res.status(404).json({ message: "User not found" });
@@ -349,7 +349,7 @@ export const userAccountDeletion = asyncHandler(async (req, res) => {
 });
 
 // getting admin user
-export const gettingAdminUser = asyncHandler(async (req, res) => {
+export const getAdminUsers = asyncHandler(async (req, res) => {
   try {
     const users = await User.find().select("-password").sort({ createdAt: -1 });
     return res.status(200).json(users);
@@ -359,7 +359,7 @@ export const gettingAdminUser = asyncHandler(async (req, res) => {
 });
 
 // assigning role by the admin controller logic
-export const assigningRoleByAdmin = asyncHandler(async (req, res) => {
+export const updateUserRole = asyncHandler(async (req, res) => {
   try {
     const { role } = req.body;
     if (!["customer", "staff", "sub_admin"].includes(role))

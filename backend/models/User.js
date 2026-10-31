@@ -18,7 +18,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      rquired: [true, "password is required"],
+      required: [true, "password is required"],
     },
     phone: {
       type: String,
@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["customer", "staff", "sub_admin", "sup_admin"],
+      enum: ["customer", "staff", "sub_admin", "super_admin"],
       default: "customer",
     },
     avatarUrl: {

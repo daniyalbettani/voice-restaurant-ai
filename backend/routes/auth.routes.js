@@ -1,15 +1,15 @@
 import { Router } from "express";
 import {
-  assigningRoleByAdmin,
+  getAdminUsers,
   getCurrentUser,
-  gettingAdminUser,
   loginUser,
   logOut,
-  profile,
   resendOtp,
   sendOtp,
-  userAccountDeletion,
+  updateProfile,
+  deleteAccount,
   verifyOtp,
+  updateUserRole,
 } from "../controllers/auth.controller.js";
 import {
   superAdminMiddleware,
@@ -28,11 +28,11 @@ authRouter.post("/resend-otp", resendOtp);
 // Private Routes protected by verifyJWT middleware
 authRouter.post("/log-out", verifyJWT, logOut);
 authRouter.get("/me", verifyJWT, getCurrentUser);
-authRouter.patch("/profile", verifyJWT, profile);
-authRouter.delete("/account", verifyJWT, userAccountDeletion);
-authRouter.get("/admin/users", superAdminMiddleware, gettingAdminUser);
+authRouter.patch("/profile", verifyJWT, updateProfile);
+authRouter.delete("/account", verifyJWT, deleteAccount);
+authRouter.get("/admin/users", superAdminMiddleware, getAdminUsers);
 authRouter.patch(
   "/admin/users/:id/role",
   superAdminMiddleware,
-  assigningRoleByAdmin,
+  updateUserRole,
 );

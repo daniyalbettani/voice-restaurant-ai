@@ -7,7 +7,7 @@ export const setIo = (socketIo) => {
   io = socketIo;
 };
 
-export const order = asyncHandler(async (req, res) => {
+export const createOrder = asyncHandler(async (req, res) => {
   try {
     const order = await new Order(req.body).save();
     if (io) io.emit("newOrder", order);
@@ -18,7 +18,7 @@ export const order = asyncHandler(async (req, res) => {
   }
 });
 
-export const orders = asyncHandler(async (req, res) => {
+export const getAllOrders = asyncHandler(async (req, res) => {
   try {
     res.json(await Order.find().sort({ createdAt: -1 }));
   } catch {
@@ -89,7 +89,7 @@ export const lockOrder = asyncHandler(async (req, res) => {
   }
 });
 
-export const orderStatus = asyncHandler(async (req, res) => {
+export const getOrderStats = asyncHandler(async (req, res) => {
   try {
     const { status } = req.body;
     if (!["pending", "preparing", "ready", "done"].includes(status))
@@ -122,7 +122,7 @@ export const deleteOrderBySuperAdmin = asyncHandler(async (req, res) => {
   }
 });
 
-export const orderState = asyncHandler(async (req, res) => {
+export const updateOrderStatus = asyncHandler(async (req, res) => {
   try {
     const [total, pending, preparing, ready, done, rev, userCount] =
       await Promise.all([
