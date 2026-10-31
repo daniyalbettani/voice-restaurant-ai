@@ -1,9 +1,5 @@
 import { Order } from "../models/Order.js";
 import { User } from "../models/User.js";
-import {
-  staffMiddleware,
-  superAdminMiddleware,
-} from "../middlewares/auth.middleware.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 let io;
