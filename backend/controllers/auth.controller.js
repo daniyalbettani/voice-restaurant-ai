@@ -217,13 +217,164 @@ export const logOut = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getCurrentUser = asyncHandler(async (req, res) => {
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        req.user,
-        "Current user profile fetched successfully!",
-      ),
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    return res.status(200).json(user);
+  } catch {
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Resend OTP Controller logic
+
+export const resendOtp = asyncHandler(async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = email.toLowerCase();
+    const record = otpStore.get(cleanEmail);
+
+    if (!record)
+      return res
+        .status(400)
+        .json({ message: "No pending registration found. Please start over." });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otpStore.set(cleanEmail, {
+      ...record,
+      otp,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    try {
+      await sendOTPEmail(cleanEmail, otp, record.data.name);
+      return res.status(200).json({ message: "New OTP sent to your email." });
+    } catch (emailErr) {
+      console.error("❌ Resend OTP Email Error:", emailErr.message);
+      return res.status(500).json({ message: "Failed to resend OTP email." });
+    }
+  } catch (err) {
+    console.error("❌ Resend OTP Error:", err);
+    return res.status(500).json({ message: "Failed to resend OTP." });
+  }
+});
+
+// User name changes logic controller
+
+export const profile = asyncHandler(async (req, res) => {
+  try {
+    const { name, email, avatarUrl } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (name && name.trim() !== user.name) {
+      if (user.nameChangedAt) {
+        const daysSince =
+          (Date.now() - new Date(user.nameChangedAt)) / (1000 * 60 * 60 * 24);
+        if (daysSince < 7) {
+          const daysLeft = Math.ceil(7 - daysSince);
+          return res.status(400).json({
+            message: `You can change your name again in ${daysLeft} day(s)`,
+          });
+        }
+      }
+      user.name = name.trim();
+      user.nameChangedAt = new Date();
+    }
+
+    if (email && email.toLowerCase() !== user.email) {
+      const existing = await User.findOne({ email: email.toLowerCase() });
+      if (existing)
+        return res
+          .status(409)
+          .json({ message: "This email is already in use by another account" });
+      user.email = email.toLowerCase();
+    }
+
+    if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+    await user.save();
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email, name: user.name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "7d" },
     );
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+        nameChangedAt: user.nameChangedAt,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error updating profile" });
+  }
+});
+
+// User account deletion controller logic
+
+export const userAccountDeletion = asyncHandler(async (req, res) => {
+  try {
+    const target = await User.findById(req.user.id);
+    if (!target) return res.status(404).json({ message: "User not found" });
+
+    if (target.role === "super_admin") {
+      const subAdmin = await User.findOne({ role: "sub_admin" });
+      if (subAdmin) {
+        subAdmin.role = "super_admin";
+        await subAdmin.save();
+        console.log(`👑 Sub admin ${subAdmin.email} promoted to Super Admin.`);
+      }
+    }
+
+    await User.findByIdAndDelete(req.user.id);
+    return res.status(200).json({ message: "Account deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error deleting account" });
+  }
+});
+
+// getting admin user
+export const gettingAdminUser = asyncHandler(async (req, res) => {
+  try {
+    const users = await User.find().select("-password").sort({ createdAt: -1 });
+    return res.status(200).json(users);
+  } catch {
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// assigning role by the admin controller logic
+export const assigningRoleByAdmin = asyncHandler(async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!["customer", "staff", "sub_admin"].includes(role))
+      return res
+        .status(400)
+        .json({ message: "Role must be customer, staff or sub_admin" });
+
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).json({ message: "User not found" });
+    if (target.role === "super_admin")
+      return res
+        .status(403)
+        .json({ message: "Cannot change super admin role" });
+
+    target.role = role;
+    await target.save();
+    return res
+      .status(200)
+      .json({ message: `Role updated to ${role}`, user: target });
+  } catch {
+    return res.status(500).json({ message: "Server error" });
+  }
 });

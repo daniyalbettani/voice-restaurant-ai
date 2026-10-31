@@ -18,9 +18,19 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(cookieParser());
 app.use(express.static("public"));
 
-import authRoutes from "./routes/auth.routes.js";
+// ROUTES
 
-app.use("/api/v1/auth", authRoutes);
+import { authRouter } from "./routes/auth.routes.js";
+app.use("/api/v1/auth", authRouter);
+
+import { menuRouter } from "./routes/menu.js";
+app.use("/api/menu", menuRouter);
+
+import { OrderRouter } from "./routes/orders.js";
+app.use("/api", OrderRouter);
+
+import { voiceParseRouter } from "./routes/ai.js";
+app.use("/api", voiceParseRouter);
 
 app.use(errorHandler);
 

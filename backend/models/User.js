@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    nameChangeAt: {
+    nameChangedAt: {
       type: Date,
       default: null,
     },
