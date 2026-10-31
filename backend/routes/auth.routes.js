@@ -20,8 +20,9 @@ export const authRouter = Router();
 
 // PUBLIC ROUTES
 authRouter.post("/send-otp", sendOtp);
-authRouter.post("/verfiy-otp", verifyOtp);
-authRouter.post("/login-user", loginUser);
+authRouter.post("/verify-otp", verifyOtp);       // fixed typo: was /verfiy-otp
+authRouter.post("/login", loginUser);             // matches frontend /api/auth/login
+authRouter.post("/login-user", loginUser);        // kept for backwards compat
 authRouter.post("/resend-otp", resendOtp);
 
 // Private Routes protected by verifyJWT middleware

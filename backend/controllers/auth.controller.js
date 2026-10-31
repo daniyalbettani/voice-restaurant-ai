@@ -1,7 +1,12 @@
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendOTPEmail } from "../utils/email.js";
+
+const JWT_SECRET = process.env.JWT_SECRET || "voicebite_secret_2024";
 
 // In-memory OTP store — email → { otp, data, expiresAt }
 const otpStore = new Map();

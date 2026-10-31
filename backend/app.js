@@ -21,7 +21,7 @@ app.use(express.static("public"));
 // ROUTES
 
 import { authRouter } from "./routes/auth.routes.js";
-app.use("/api/v1/auth", authRouter);
+app.use("/api/auth", authRouter);
 
 import { menuRouter } from "./routes/menu.js";
 app.use("/api/menu", menuRouter);
