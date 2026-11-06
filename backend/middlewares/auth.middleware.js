@@ -69,3 +69,23 @@ export const superAdminMiddleware = (req, res, next) => {
     return res.status(401).json({ message: "Invalid token" });
   }
 };
+
+export const authorizedRoles = (...allowedRoles) => {
+  return (req, _, next) => {
+    // 1. Verify that verifyJWT ran first and attached req.user
+    if (!req.user) {
+      throw new ApiError(401, "Authentication required before authorization.");
+    }
+
+    // 2. Check if user's role is in the list of allowed roles, allowed roles = admin, agar user ka role admin hai toh usay access mil jayega if not then the access is denied
+    if (!allowedRoles.includes(req.user.role)) {
+      throw new ApiError(
+        403,
+        `Access denied. Role '${req.user.role}' is not authorized to perform this action.`
+      );
+    }
+
+    // 3. User is authorized, pass control to next middleware/controller
+    next();
+  };
+}
