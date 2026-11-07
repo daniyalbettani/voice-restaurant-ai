@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
+import AddMenuItem from "./AddMenuItem";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://192.168.100.17:5000";
 
@@ -398,6 +399,7 @@ const AdminDashboard = () => {
         }}
       >
         <TabBtn id="orders" label="📋 Orders" />
+        <TabBtn id="menu" label="🍽️ Menu" />
         {isSuperAdmin && <TabBtn id="staff" label="👥 Staff Management" />}
       </div>
 
@@ -712,6 +714,11 @@ const AdminDashboard = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* MENU MANAGEMENT TAB */}
+      {tab === "menu" && (
+        <AddMenuItem adminToken={adminToken} />
       )}
 
       {/* STAFF MANAGEMENT TAB */}

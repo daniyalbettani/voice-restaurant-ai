@@ -26,6 +26,9 @@ app.use("/api/auth", authRouter);
 import { menuRouter } from "./routes/menu.js";
 app.use("/api/menu", menuRouter);
 
+import { cartRouter } from "./routes/cart.js";
+app.use("/api/cart", cartRouter);
+
 import { OrderRouter } from "./routes/orders.js";
 app.use("/api", OrderRouter);
 
