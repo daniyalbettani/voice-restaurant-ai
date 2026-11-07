@@ -125,17 +125,10 @@ export const removeFromCart = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, cart, "Item removed from cart successfully"));
 });
 
-
-/**
- * @desc  Set the exact quantity of a specific item in the cart
- *        (replaces the add-delta workaround on the frontend)
- * @route PATCH /api/cart/update/:menuItemId
- * @body  { quantity: Number }
- * @access Private
- */
+// Why Do We Need This Function? (Absolute vs. Delta)In our previous addToCart controller, passing quantity: 2 meant adding 2 more to whatever was already in the cart (a delta or relative change).If a user already has 2 burgers in their cart and types or tells Voice AI, "Change my burger quantity to 5":Using addToCart would result in 2 + 5 = 7 burgers (incorrect).Using updateCartItemQty sets the quantity directly to 5 (absolute replacement).
 export const updateCartItemQty = asyncHandler(async (req, res) => {
   const { menuItemId } = req.params;
-  const { quantity }   = req.body;
+  const { quantity } = req.body;
 
   const qty = Number(quantity);
   if (!qty || qty < 1) {
@@ -148,7 +141,7 @@ export const updateCartItemQty = asyncHandler(async (req, res) => {
   }
 
   const itemIndex = cart.items.findIndex(
-    (i) => i.menuItem.toString() === menuItemId
+    (i) => i.menuItem.toString() === menuItemId,
   );
 
   if (itemIndex === -1) {
@@ -168,9 +161,7 @@ export const updateCartItemQty = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc  Delete every item in the user's cart in a single operation
- * @route DELETE /api/cart/clear
- * @access Private
+ When a customer completes their order at checkout (or clicks a "Clear Cart" button), we must wipe their entire cart. Without this function, the backend would force the frontend to call removeFromCart individually for every single item, creating unnecessary network traffic
  */
 export const clearCart = asyncHandler(async (req, res) => {
   let cart = await Cart.findOne({ user: req.user._id });
@@ -179,10 +170,16 @@ export const clearCart = asyncHandler(async (req, res) => {
     // No cart exists yet — return an empty cart document shape
     return res
       .status(200)
-      .json(new ApiResponse(200, { items: [], totalAmount: 0 }, "Cart is already empty"));
+      .json(
+        new ApiResponse(
+          200,
+          { items: [], totalAmount: 0 },
+          "Cart is already empty",
+        ),
+      );
   }
 
-  cart.items       = [];
+  cart.items = [];
   cart.totalAmount = 0;
   await cart.save();
 

@@ -16,5 +16,5 @@ cartRouter.use(verifyJWT);
 cartRouter.get("/", getCart);
 cartRouter.post("/add", addToCart);
 cartRouter.patch("/update/:menuItemId", updateCartItemQty); // PATCH /api/cart/update/:id
-cartRouter.delete("/remove/:menuItemId", removeFromCart);
 cartRouter.delete("/clear", clearCart); // DELETE /api/cart/clear
+cartRouter.delete("/remove/:menuItemId", removeFromCart);

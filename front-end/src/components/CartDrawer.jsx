@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 const CartDrawer = () => {
+  const navigate = useNavigate();
   const { cart, cartOpen, setCartOpen, removeFromCart, updateQty, clearCart, cartTotal, loading } = useCart();
   const { user, isLoggedIn } = useAuth();
   const [placing,    setPlacing]    = useState(false);
@@ -144,7 +146,20 @@ const CartDrawer = () => {
                   <h3 style={{ fontWeight: 700, fontSize: '18px', marginBottom: '8px' }}>Your cart is empty</h3>
                   <p style={{ color: 'var(--text2)', fontSize: '14px' }}>Add items from the menu below!</p>
                   <button
-                    onClick={() => { setCartOpen(false); document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' }); }}
+                    onClick={() => {
+                      setCartOpen(false);
+                      const menuEl = document.getElementById('menu');
+                      if (menuEl) {
+                        // Already on home page — just scroll
+                        menuEl.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        // On a different page (e.g. /track-orders) — go home then scroll
+                        navigate('/');
+                        setTimeout(() => {
+                          document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 400);
+                      }
+                    }}
                     style={{ marginTop: '20px', padding: '10px 24px', background: 'linear-gradient(135deg,#f97316,#ea580c)', border: 'none', borderRadius: '10px', color: '#fff', fontFamily: 'Inter,sans-serif', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}
                   >Browse Menu</button>
                 </div>
