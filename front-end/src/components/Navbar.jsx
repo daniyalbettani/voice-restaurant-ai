@@ -226,7 +226,7 @@ const Navbar = ({ isAdmin = false }) => {
                       </span>
                     )}
                   </div>
-                  <span className="avatar-name">{user.name.split(" ")[0]}</span>
+                  <span className="avatar-name">{(user.name || "User").split(" ")[0]}</span>
                 </button>
               ) : (
                 <div className="auth-btns">

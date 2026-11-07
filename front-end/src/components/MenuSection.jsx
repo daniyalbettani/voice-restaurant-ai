@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import MenuCard from './MenuCard';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -20,7 +20,9 @@ const MenuSection = () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/menu`);
         const data = await res.json();
-        setMenu(data);
+        // Backend wraps in ApiResponse: { statusCode, success, message, data: [...] }
+        const items = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []);
+        setMenu(items);
       } catch (err) {
         console.error('Error fetching menu:', err);
       } finally {
