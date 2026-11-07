@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { parseOrder, generateResponse } from "../services/orderParser";
 import { useAuth } from "../context/AuthContext";
@@ -32,8 +32,10 @@ const VoiceAssistant = () => {
     fetch(`${API}/api/menu`)
       .then((r) => r.json())
       .then((d) => {
-        setMenu(Array.isArray(d) ? d : []);
-        menuRef.current = Array.isArray(d) ? d : [];
+        // Backend wraps in ApiResponse: { data: [...] }
+        const items = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : []);
+        setMenu(items);
+        menuRef.current = items;
       })
       .catch(console.error)
       .finally(() => setLoadingMenu(false));

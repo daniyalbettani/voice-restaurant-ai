@@ -1,4 +1,4 @@
-import { Cart } from "../models/Cart.js";
+﻿import { Cart } from "../models/Cart.js";
 import { Menu } from "../models/Menu.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -123,4 +123,70 @@ export const removeFromCart = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(new ApiResponse(200, cart, "Item removed from cart successfully"));
+});
+
+
+/**
+ * @desc  Set the exact quantity of a specific item in the cart
+ *        (replaces the add-delta workaround on the frontend)
+ * @route PATCH /api/cart/update/:menuItemId
+ * @body  { quantity: Number }
+ * @access Private
+ */
+export const updateCartItemQty = asyncHandler(async (req, res) => {
+  const { menuItemId } = req.params;
+  const { quantity }   = req.body;
+
+  const qty = Number(quantity);
+  if (!qty || qty < 1) {
+    throw new ApiError(400, "Quantity must be a positive number");
+  }
+
+  let cart = await Cart.findOne({ user: req.user._id });
+  if (!cart) {
+    throw new ApiError(404, "Cart not found");
+  }
+
+  const itemIndex = cart.items.findIndex(
+    (i) => i.menuItem.toString() === menuItemId
+  );
+
+  if (itemIndex === -1) {
+    throw new ApiError(404, "Item not in cart");
+  }
+
+  // Set the exact quantity the client requested
+  cart.items[itemIndex].quantity = qty;
+
+  cart.totalAmount = await recalculateCartTotal(cart);
+  await cart.save();
+  await cart.populate("items.menuItem");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, cart, "Cart item quantity updated"));
+});
+
+/**
+ * @desc  Delete every item in the user's cart in a single operation
+ * @route DELETE /api/cart/clear
+ * @access Private
+ */
+export const clearCart = asyncHandler(async (req, res) => {
+  let cart = await Cart.findOne({ user: req.user._id });
+
+  if (!cart) {
+    // No cart exists yet — return an empty cart document shape
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { items: [], totalAmount: 0 }, "Cart is already empty"));
+  }
+
+  cart.items       = [];
+  cart.totalAmount = 0;
+  await cart.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, cart, "Cart cleared successfully"));
 });

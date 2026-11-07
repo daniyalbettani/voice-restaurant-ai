@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 const CartDrawer = () => {
-  const { cart, cartOpen, setCartOpen, removeFromCart, updateQty, clearCart, cartTotal } = useCart();
+  const { cart, cartOpen, setCartOpen, removeFromCart, updateQty, clearCart, cartTotal, loading } = useCart();
   const { user, isLoggedIn } = useAuth();
   const [placing,    setPlacing]    = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -14,27 +14,34 @@ const CartDrawer = () => {
 
   if (!cartOpen) return null;
 
-  /* ── Place Order (called after confirmation) ─────────────── */
+  /* ── Place Order ──────────────────────────────────────────── */
   const submitOrder = async () => {
     if (cart.length === 0) return;
     setPlacing(true);
     try {
+      const token = localStorage.getItem('vb_token');
       const res = await fetch(`${API}/api/order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          Authorization:   `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          items: cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
-          total: cartTotal,
+          items:  cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
+          total:  cartTotal,
           userId: isLoggedIn ? (user._id || user.id) : null,
           source: 'cart',
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        setOrderNum(data.order._id.slice(-6).toUpperCase());
+        // ApiResponse wrapper: data.data.order or data.order
+        const order = data.data?.order || data.order || data.data || data;
+        const id    = order?._id || order?.id || '';
+        setOrderNum(id.toString().slice(-6).toUpperCase());
         setSuccess(true);
         setConfirming(false);
-        clearCart();
+        await clearCart();
         setTimeout(() => { setSuccess(false); setCartOpen(false); }, 4500);
       }
     } catch (err) { console.error(err); }
@@ -42,15 +49,11 @@ const CartDrawer = () => {
   };
 
   const handlePlaceOrder = () => {
-    if (!isLoggedIn) {
-      // This will be caught by CartContext auth gate but in case cart already has items
-      alert('Please sign in to place an order.');
-      return;
-    }
-    setConfirming(true); // show confirmation screen first
+    if (!isLoggedIn) { alert('Please sign in to place an order.'); return; }
+    setConfirming(true);
   };
 
-  /* ── Shared Styles ─────────────────────────────────────────── */
+  /* ── Styles ───────────────────────────────────────────────── */
   const drawerStyle = {
     position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 201,
     width: '100%', maxWidth: '400px', background: 'var(--bg3)',
@@ -67,7 +70,7 @@ const CartDrawer = () => {
       />
 
       <div style={drawerStyle}>
-        {/* ── Header ─────────────────────────────────── */}
+        {/* ── Header ──────────────────────────────────── */}
         <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '22px' }}>{confirming ? '✅' : '🛒'}</span>
@@ -86,7 +89,14 @@ const CartDrawer = () => {
           >✕</button>
         </div>
 
-        {/* ── Success Screen ──────────────────────────── */}
+        {/* Loading shimmer */}
+        {loading && (
+          <div style={{ padding: '20px 24px', color: 'var(--text3)', fontSize: '14px', textAlign: 'center' }}>
+            Loading cart…
+          </div>
+        )}
+
+        {/* ── Success Screen ───────────────────────────── */}
         {success ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
             <div style={{ fontSize: '72px', marginBottom: '16px' }}>🎉</div>
@@ -98,7 +108,7 @@ const CartDrawer = () => {
             <p style={{ color: 'var(--text3)', fontSize: '13px', marginTop: '16px' }}>This window closes automatically…</p>
           </div>
 
-        /* ── Confirmation Screen ────────────────────── */
+        /* ── Confirmation Screen ─────────────────────── */
         ) : confirming ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -124,7 +134,7 @@ const CartDrawer = () => {
             </div>
           </div>
 
-        /* ── Cart Items ─────────────────────────────── */
+        /* ── Cart Items ──────────────────────────────── */
         ) : (
           <>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
@@ -175,11 +185,6 @@ const CartDrawer = () => {
                 <button onClick={clearCart} style={{ width: '100%', padding: '11px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text2)', fontFamily: 'Inter,sans-serif', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}>
                   Clear Cart
                 </button>
-                {!isLoggedIn && (
-                  <p style={{ color: 'var(--text3)', fontSize: '12px', textAlign: 'center', marginTop: '10px' }}>
-                    💡 Sign in to save your order history
-                  </p>
-                )}
               </div>
             )}
           </>

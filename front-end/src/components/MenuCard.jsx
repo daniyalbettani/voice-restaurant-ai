@@ -40,7 +40,7 @@ const MenuCard = ({ item }) => {
           <div className="menu-card-price">Rs {item.price}</div>
           <button
             className={`add-to-cart-btn ${inCart ? 'in-cart' : ''}`}
-            onClick={() => addToCart(item)}
+            onClick={async () => addToCart(item)}
           >
             {inCart ? `🛒 ${inCart.quantity} in cart` : '+ Add to Cart'}
           </button>
