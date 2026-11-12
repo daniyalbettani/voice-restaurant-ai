@@ -4,26 +4,7 @@ import mongoose from "mongoose";
 
 // In the Cart, we read prices from the Menu so they are always fresh.
 // In the Order, we copy and freeze the prices so your receipt never changes.
-const orderItemSchema = new mongoose.Schema({
-  menuItem: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Menu",
-    required: true,
-  },
-  name: {
-    type: String,
-    required: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 1,
-  },
-});
+import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -32,37 +13,30 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    items: [orderItemSchema],
-    totalAmount: {
-      type: Number,
-      required: true,
-    },
-    deliveryAddress: {
-      street: { type: String, required: true },
-      city: { type: String, required: true },
-      phone: { type: String, required: true },
-    },
-    paymentMethod: {
-      type: String,
-      enum: ["COD", "CARD", "ONLINE"],
-      default: "COD",
-    },
-    paymentStatus: {
-      type: String,
-      enum: ["PENDING", "COMPLETED", "FAILED"],
-      default: "PENDING",
-    },
+    items: [
+      {
+        menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "Menu" },
+        name: { type: String, required: true },
+        price: { type: Number, required: true },
+        quantity: { type: Number, required: true },
+      },
+    ],
+    totalAmount: { type: Number, required: true },
     orderStatus: {
       type: String,
-      enum: [
-        "PENDING",
-        "PREPARING",
-        "OUT_FOR_DELIVERY",
-        "DELIVERED",
-        "CANCELLED",
-      ],
+      enum: ["PENDING", "PREPARING", "READY", "DELIVERED", "CANCELLED"],
       default: "PENDING",
     },
+    paymentMethod: { type: String, default: "COD" },
+    paymentStatus: { type: String, default: "PENDING" },
+    deliveryAddress: {
+      street: { type: String, default: "" },
+      city: { type: String, default: "" },
+      phone: { type: String, default: "" },
+    },
+    customerNote: { type: String, default: "" },
+    source: { type: String, enum: ["CART", "VOICE", "CHAT"], default: "CART" },
+    locked: { type: Boolean, default: false }, // Chef lock status
   },
   { timestamps: true },
 );
