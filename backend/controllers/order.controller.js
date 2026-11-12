@@ -1,149 +1,208 @@
-import { Order } from "../models/Order.js";
-import { User } from "../models/User.js";
+import { Order } from "../models/OrderSchema.model.js";
+import { Cart } from "../models/CartSchema.model.js";
+import { User } from "../models/User.model.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-let io;
-export const setIo = (socketIo) => {
-  io = socketIo;
-};
-
+/**
+ Create new order from active cart (Cart Checkout)
+ */
 export const createOrder = asyncHandler(async (req, res) => {
-  try {
-    const order = await new Order(req.body).save();
-    if (io) io.emit("newOrder", order);
-    res.status(201).json({ message: "Order saved", order });
-  } catch (err) {
-    console.error("Order creation error:", err);
-    res.status(500).json({ message: "Error saving order" });
+  const { deliveryAddress, paymentMethod, customerNote } = req.body;
+
+  const cart = await Cart.findOne({ user: req.user._id }).populate(
+    "items.menuItem",
+  );
+  if (!cart || cart.items.length === 0) {
+    throw new ApiError(400, "Your cart is empty");
   }
+
+  const orderItems = cart.items.map((item) => ({
+    menuItem: item.menuItem._id,
+    name: item.menuItem.name,
+    price: item.menuItem.price,
+    quantity: item.quantity,
+  }));
+
+  const newOrder = await Order.create({
+    user: req.user._id,
+    items: orderItems,
+    totalAmount: cart.totalAmount,
+    deliveryAddress: deliveryAddress || {},
+    paymentMethod: paymentMethod || "COD",
+    customerNote: customerNote || "",
+    source: "CART",
+  });
+
+  // Empty cart after checkout
+  cart.items = [];
+  cart.totalAmount = 0;
+  await cart.save();
+
+  // ⚡ REAL-TIME: Kitchen Screen par instant alert bhejega
+  const io = req.app.get("io");
+  if (io) io.emit("newOrder", newOrder);
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, newOrder, "Order placed successfully"));
 });
 
-export const getAllOrders = asyncHandler(async (req, res) => {
-  try {
-    res.json(await Order.find().sort({ createdAt: -1 }));
-  } catch {
-    res.status(500).json({ message: "Error fetching orders" });
-  }
-});
-
-export const getOrdersByUserId = asyncHandler(async (req, res) => {
-  try {
-    const orders = await Order.find({ userId: req.params.userId })
-      .sort({ createdAt: -1 })
-      .limit(20);
-    res.json(orders);
-  } catch {
-    res.status(500).json({ message: "Error fetching order history" });
-  }
-});
-
+/**
+ Cancel order within 5 minutes if not locked by chef
+ */
 export const cancelOrder = asyncHandler(async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (["done", "cancelled"].includes(order.status))
-      return res
-        .status(400)
-        .json({ message: "Cannot cancel — order is already " + order.status });
+  const { id } = req.params;
 
-    if (order.locked)
-      return res.status(400).json({
-        message:
-          "❌ You already confirmed this order — it cannot be cancelled. The chef is cooking!",
-      });
-
-    const timeDiffMs = Date.now() - new Date(order.createdAt).getTime();
-    if (timeDiffMs > 5 * 60 * 1000)
-      return res.status(400).json({
-        message: "Cannot cancel — 5-minute cancellation window has expired!",
-      });
-
-    order.status = "cancelled";
-    await order.save();
-    if (io) io.emit("orderUpdated", order);
-    res.json({ message: "Order cancelled", order });
-  } catch (err) {
-    console.error("❌ Cancel error:", err);
-    res.status(500).json({ message: "Error cancelling order: " + err.message });
+  // Search order with ownership check
+  const order = await Order.findOne({ _id: id, user: req.user._id });
+  if (!order) {
+    throw new ApiError(404, "Order not found");
   }
-});
 
-export const lockOrder = asyncHandler(async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.status !== "pending")
-      return res
-        .status(400)
-        .json({ message: "Only pending orders can be locked." });
-    if (order.locked)
-      return res.status(400).json({ message: "Order is already locked." });
-
-    order.locked = true;
-    await order.save();
-    if (io) io.emit("orderUpdated", order);
-    res.json({ message: "Order locked. Chef can start cooking now!", order });
-  } catch (err) {
-    console.error("❌ Lock error:", err);
-    res.status(500).json({ message: "Error locking order: " + err.message });
-  }
-});
-
-export const getOrderStats = asyncHandler(async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!["pending", "preparing", "ready", "done"].includes(status))
-      return res.status(400).json({ message: "Invalid status" });
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true },
+  if (["DELIVERED", "CANCELLED"].includes(order.orderStatus)) {
+    throw new ApiError(
+      400,
+      `Cannot cancel — order is already ${order.orderStatus}`,
     );
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (io) io.emit("orderUpdated", order);
-    res.json({ message: "Status updated", order });
-  } catch {
-    res.status(500).json({ message: "Error updating status" });
   }
+
+  // 1. Chef Lock Check
+  if (order.locked) {
+    throw new ApiError(
+      400,
+      "Order cannot be cancelled. The chef has already locked and started cooking your order!",
+    );
+  }
+
+  // 2. 5-Minute Time Window Check
+  const timeDiffMs = Date.now() - new Date(order.createdAt).getTime();
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+  if (timeDiffMs > FIVE_MINUTES_MS) {
+    throw new ApiError(
+      400,
+      "Cannot cancel — 5-minute cancellation window has expired!",
+    );
+  }
+
+  order.orderStatus = "CANCELLED";
+  await order.save();
+
+  // ⚡ REAL-TIME: Notify Kitchen Dashboard of cancellation
+  const io = req.app.get("io");
+  if (io) io.emit("orderUpdated", order);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, order, "Order cancelled successfully"));
 });
 
-export const deleteOrderBySuperAdmin = asyncHandler(async (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0)
-      return res.status(400).json({ message: "No IDs provided" });
+/**
+  Lock order (Chef starts cooking - Admin/Kitchen staff only) 
+ */
+export const lockOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-    await Order.deleteMany({ _id: { $in: ids } });
-    if (io) ids.forEach((id) => io.emit("orderDeleted", id));
-    res.json({ message: `${ids.length} order(s) deleted` });
-  } catch {
-    res.status(500).json({ message: "Error deleting orders" });
+  const order = await Order.findById(id);
+  if (!order) {
+    throw new ApiError(404, "Order not found");
   }
+
+  if (order.orderStatus !== "PENDING") {
+    throw new ApiError(400, "Only PENDING orders can be locked by chef.");
+  }
+
+  if (order.locked) {
+    throw new ApiError(400, "Order is already locked.");
+  }
+
+  order.locked = true;
+  order.orderStatus = "PREPARING";
+  await order.save();
+
+  const io = req.app.get("io");
+  if (io) io.emit("orderUpdated", order);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, order, "Order locked. Chef started cooking."));
 });
 
-export const updateOrderStatus = asyncHandler(async (req, res) => {
-  try {
-    const [total, pending, preparing, ready, done, rev, userCount] =
-      await Promise.all([
-        Order.countDocuments(),
-        Order.countDocuments({ status: "pending" }),
-        Order.countDocuments({ status: "preparing" }),
-        Order.countDocuments({ status: "ready" }),
-        Order.countDocuments({ status: "done" }),
-        Order.aggregate([{ $group: { _id: null, total: { $sum: "$total" } } }]),
-        User.countDocuments(),
-      ]);
-    res.json({
-      total,
-      pending,
-      preparing,
-      ready,
-      done,
-      revenue: rev[0]?.total || 0,
-      userCount,
-    });
-  } catch {
-    res.status(500).json({ message: "Error fetching stats" });
+/**
+ *   Get all system orders with optional status filter (Admin Only)
+ *
+ */
+export const getAllOrders = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = {};
+
+  if (status) {
+    filter.orderStatus = status.toUpperCase();
   }
+
+  const orders = await Order.find(filter)
+    .populate("user", "name email phone")
+    .sort({ createdAt: -1 });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, orders, "All orders retrieved successfully"));
+});
+
+/**
+ * Get kitchen & dashboard statistics (Admin Analytics)
+ */
+export const getOrderStats = asyncHandler(async (req, res) => {
+  const [
+    total,
+    pending,
+    preparing,
+    ready,
+    delivered,
+    cancelled,
+    revenueAgg,
+    userCount,
+  ] = await Promise.all([
+    Order.countDocuments(),
+    Order.countDocuments({ orderStatus: "PENDING" }),
+    Order.countDocuments({ orderStatus: "PREPARING" }),
+    Order.countDocuments({ orderStatus: "READY" }),
+    Order.countDocuments({ orderStatus: "DELIVERED" }),
+    Order.countDocuments({ orderStatus: "CANCELLED" }),
+    Order.aggregate([
+      { $match: { orderStatus: { $ne: "CANCELLED" } } },
+      { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
+    ]),
+    User.countDocuments(),
+  ]);
+
+  const stats = {
+    totalOrders: total,
+    pending,
+    preparing,
+    ready,
+    delivered,
+    cancelled,
+    totalRevenue: revenueAgg[0]?.totalRevenue || 0,
+    totalUsers: userCount,
+  };
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, stats, "Dashboard stats fetched successfully"));
+});
+
+/**
+ Get user order history
+ */
+export const getMyOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find({ user: req.user._id })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, orders, "User orders fetched successfully"));
 });
