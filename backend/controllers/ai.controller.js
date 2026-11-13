@@ -1,168 +1,329 @@
+import { Order } from "../models/OrderSchema.model.js";
+import { Cart } from "../models/CartSchema.model.js";
+import { Menu } from "../models/MenuSchema.model.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { formatOrderHistoryForAI } from "../utils/aiContextFormatter.js";
+import { generateGeminiJSON } from "../utils/gemini.js";
 
-// Word numbers → integer (Urdu + Roman Urdu + English)
+// Word numbers → integer (English + Roman Urdu + Urdu script support)
 const WORD_TO_NUM = {
-  // English
-  one: 1, two: 2, three: 3, four: 4, five: 5,
-  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  a: 1, an: 1, couple: 2, double: 2, single: 1,
-  // Roman Urdu / Hindi
-  ek: 1, do: 2, teen: 3, char: 4, paanch: 5,
-  chhe: 6, chay: 6, saat: 7, aath: 8, nau: 9, das: 10,
-  // Urdu script numbers
-  "ایک": 1, "دو": 2, "تین": 3, "چار": 4, "پانچ": 5,
-  "چھ": 6, "سات": 7, "آٹھ": 8, "نو": 9, "دس": 10,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  a: 1,
+  an: 1,
+  single: 1,
+  double: 2,
+  couple: 2,
+  ek: 1,
+  do: 2,
+  teen: 3,
+  char: 4,
+  paanch: 5,
+  chhe: 6,
+  chay: 6,
+  saat: 7,
+  aath: 8,
+  nau: 9,
+  das: 10,
+  ایک: 1,
+  دو: 2,
+  تین: 3,
+  چار: 4,
+  پانچ: 5,
+  چھ: 6,
+  سات: 7,
+  آٹھ: 8,
+  نو: 9,
+  دس: 10,
 };
 
 /**
- * Match Gemini-returned items against the real menu.
- * Uses fuzzy matching so "biryani" finds "Chicken Biryani",
- * "burger" finds "Beef Burger", etc.
+ * Helper 1: Fuzzy matches AI-returned dish name against live MongoDB Menu
+ * (e.g., "biryani" matches "Chicken Biryani", "burger" matches "Zesty Cheese Burger")
  */
-const matchItems = (parsed, menu) => {
-  const order = [];
-  let total = 0;
+const findMatchingDish = (rawName, availableMenu) => {
+  const cleanName = (rawName || "").toLowerCase().trim();
+  if (!cleanName) return null;
 
-  for (const item of parsed.items || []) {
-    const rawName = (item.name || "").toLowerCase().trim();
-    if (!rawName) continue;
+  const rWords = cleanName.split(/\s+/);
 
-    // Resolve quantity (Gemini sometimes returns a word string)
-    let qty = parseInt(item.quantity);
-    if (isNaN(qty) || qty <= 0) {
-      qty = WORD_TO_NUM[String(item.quantity).toLowerCase()] || 1;
-    }
+  return availableMenu.find((m) => {
+    const mName = m.name.toLowerCase().trim();
+    const mWords = mName.split(/\s+/);
 
-    // Fuzzy match: try exact first, then substring both ways, then word-overlap
-    const found = menu.find((m) => {
-      const mName = m.name.toLowerCase().trim();
-      const mWords = mName.split(/\s+/);
-      const rWords = rawName.split(/\s+/);
-
-      return (
-        mName === rawName ||                              // exact
-        mName === rawName.replace(/s$/, "") ||           // plural strip
-        rawName === mName.replace(/s$/, "") ||
-        mName.includes(rawName) ||                       // "Chicken Biryani" includes "biryani"
-        rawName.includes(mName) ||                       // spoken name includes menu name
-        rWords.some(rw => mWords.some(mw =>              // any word overlap
-          mw === rw || mw.startsWith(rw) || rw.startsWith(mw)
-        ))
-      );
-    });
-
-    if (found) {
-      const existing = order.find((o) => o.name === found.name);
-      if (existing) {
-        existing.quantity += qty;
-      } else {
-        order.push({ name: found.name, quantity: qty, price: found.price });
-      }
-      total += found.price * qty;
-    }
-  }
-
-  return { order, total };
+    return (
+      mName === cleanName ||
+      mName === cleanName.replace(/s$/, "") ||
+      cleanName === mName.replace(/s$/, "") ||
+      mName.includes(cleanName) ||
+      cleanName.includes(mName) ||
+      rWords.some((rw) =>
+        mWords.some(
+          (mw) => mw === rw || mw.startsWith(rw) || rw.startsWith(mw),
+        ),
+      )
+    );
+  });
 };
 
-export const voiceParser = asyncHandler(async (req, res) => {
-  const { transcript, menu = [] } = req.body;
-  if (!transcript)
-    return res.status(400).json({ error: "No transcript provided" });
+/**
+ * Helper 2: Recalculates cart total price using live Menu pricing
+ */
+const recalculateCartTotal = async (cart) => {
+  let total = 0;
+  for (const item of cart.items) {
+    const dish = await Menu.findById(item.menuItem);
+    if (dish) {
+      total += Number(dish.price) * item.quantity;
+    }
+  }
+  return total;
+};
 
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) {
-    return res.status(500).json({ error: "GEMINI_API_KEY is missing" });
+/**
+ * @desc    Process user voice transcript with Gemini AI & execute DB + Socket actions
+ * @route   POST /api/v1/ai/process-voice
+ * @access  Private (Authenticated Users)
+ */
+export const processVoiceCommand = asyncHandler(async (req, res) => {
+  const { transcript } = req.body;
+
+  if (!transcript || transcript.trim() === "") {
+    throw new ApiError(400, "Voice transcript is required.");
   }
 
-  const menuStr = menu.map((m) => `"${m.name}" (Rs ${m.price})`).join(", ");
+  // =========================================================================
+  // 1. CONTEXT GATHERING (Order History + Live Available Menu)
+  // =========================================================================
+  const userOrders = await Order.find({ user: req.user._id }).sort({
+    createdAt: -1,
+  });
+  const formattedOrderHistory = formatOrderHistoryForAI(userOrders, 3);
 
-  const systemPrompt = `You are a food order parser for VoiceBite restaurant in Pakistan.
-The customer may speak in English, Roman Urdu (e.g. "mujhe do burger chahiye"), or Urdu script (مجھے دو برگر چاہیے).
+  const availableMenu = await Menu.find({ isAvailable: true }).select(
+    "name price category description",
+  );
+  const menuListString = availableMenu
+    .map(
+      (item) =>
+        `- ${item.name} ($${Number(item.price).toFixed(2)}) [Category: ${item.category}]`,
+    )
+    .join("\n");
 
-Available menu items: ${menuStr}
+  // =========================================================================
+  // 2. SYSTEM PROMPT FOR GEMINI AI
+  // =========================================================================
+  const systemPrompt = `
+You are VoiceBite AI, an intelligent voice ordering assistant for a restaurant.
+The customer may speak in English, Roman Urdu (e.g. "mujhe do burger chahiye"), or Urdu script.
+
+LIVE AVAILABLE MENU:
+${menuListString}
+
+USER RECENT ORDER HISTORY:
+${formattedOrderHistory}
+
+USER VOICE TRANSCRIPT:
+"${transcript}"
 
 RULES:
-1. Detect intent: "order", "greeting", "menu_query", "non_food", or "unclear".
-2. For "order" intent: extract every food/drink item the customer mentioned.
-3. Match item names to the closest menu item above — handle plurals, Urdu words, and partial names (e.g. "biryani" → match "Chicken Biryani").
-4. Convert word quantities to integers: "do"/"two" → 2, "teen"/"three" → 3, "ek"/"one" → 1, etc.
-5. Write a short, friendly confirmation message in English.
-6. Respond ONLY with valid raw JSON — no markdown, no explanation.
+1. Analyze the transcript and classify the user's intent into one of these exact values:
+   - "ADD_TO_CART": User wants to add food/drinks to their cart.
+   - "REORDER_LAST_MEAL": User wants to repeat or re-order their previous order.
+   - "CHECK_STATUS": User is asking where their order is or checking order status.
+   - "PLACE_ORDER": User wants to checkout, confirm, or place their current cart as an order.
+   - "GENERAL_QUERY": Greetings, menu questions, or anything else.
+2. For "ADD_TO_CART", match item names to the closest dish in LIVE AVAILABLE MENU and extract integer quantities.
+3. Write a short, natural, friendly "speechResponse" in the same language style the user spoke (Roman Urdu or English).
+4. Respond ONLY with valid raw JSON — no markdown, no backticks, no extra text.
 
-JSON schema:
+JSON Structure:
 {
-  "intent": "order",
-  "items": [{"name": "exact menu item name from the list above", "quantity": 2}],
-  "message": "Got it! 2 Chicken Biryani and 1 Burger coming right up!"
-}`;
+  "intent": "ADD_TO_CART" | "REORDER_LAST_MEAL" | "CHECK_STATUS" | "PLACE_ORDER" | "GENERAL_QUERY",
+  "items": [
+    { "name": "Exact Dish Name from Menu", "quantity": 1 }
+  ],
+  "speechResponse": "Friendly spoken confirmation for the user"
+}
+`;
 
+  // =========================================================================
+  // 3. CALL GEMINI API (With Automatic Model Fallback)
+  // =========================================================================
+  let aiResponse;
   try {
-    // gemini-2.0-flash is the correct current model name
-    const gemUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
-
-    const gmRes = await fetch(gemUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `${systemPrompt}\n\nCustomer said: "${transcript}"` },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 512,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-
-    const gmData = await gmRes.json();
-
-    if (!gmRes.ok) {
-      console.error(
-        "Gemini API Error:",
-        gmData?.error?.message || JSON.stringify(gmData),
-      );
-      return res.json({ intent: "no_ai", items: [], message: "" });
-    }
-
-    let raw =
-      gmData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-    // Strip any accidental markdown code fences
-    raw = raw
-      .replace(/^```json\s*/i, "")
-      .replace(/```\s*$/i, "")
-      .trim();
-
-    let parsed = null;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      console.warn("JSON parse error from Gemini output:", raw);
-      return res.json({ intent: "no_ai", items: [], message: "" });
-    }
-
-    if (parsed?.intent) {
-      const { order, total } = matchItems(parsed, menu);
-
-      // If Gemini says "order" but we couldn't match any items, still keep the
-      // intent so the offline parser gets a chance in the frontend fallback
-      return res.json({
-        intent: order.length > 0 ? parsed.intent : "no_ai",
-        items: order,
-        total,
-        message: parsed.message || "",
-      });
-    }
-
-    return res.json({ intent: "no_ai", items: [], message: "" });
-  } catch (err) {
-    console.warn("Gemini service error:", err.message);
-    return res.json({ intent: "no_ai", items: [], message: "" });
+    aiResponse = await generateGeminiJSON(systemPrompt);
+  } catch (error) {
+    throw new ApiError(500, `Gemini AI Error: ${error.message}`);
   }
+
+  const { intent = "GENERAL_QUERY", items = [], speechResponse } = aiResponse;
+
+  let actionTaken = intent;
+  let voiceResponse = speechResponse || "Command processed.";
+  let updatedCart = null;
+  let placedOrder = null;
+
+  // =========================================================================
+  // 4. DATABASE EXECUTION BASED ON DETECTED INTENT
+  // =========================================================================
+
+  // --- INTENT A: REORDER_LAST_MEAL ---
+  if (intent === "REORDER_LAST_MEAL") {
+    if (userOrders.length === 0) {
+      voiceResponse = "Aap ka koi purana order record nahi mila.";
+    } else {
+      const lastOrder = userOrders[0];
+
+      let cart = await Cart.findOne({ user: req.user._id });
+      if (!cart) {
+        cart = new Cart({ user: req.user._id, items: [] });
+      }
+
+      for (const item of lastOrder.items) {
+        if (!item.menuItem) continue;
+
+        const existingIndex = cart.items.findIndex(
+          (cItem) => cItem.menuItem.toString() === item.menuItem.toString(),
+        );
+
+        if (existingIndex > -1) {
+          cart.items[existingIndex].quantity += item.quantity;
+        } else {
+          cart.items.push({ menuItem: item.menuItem, quantity: item.quantity });
+        }
+      }
+
+      cart.totalAmount = await recalculateCartTotal(cart);
+      await cart.save();
+      await cart.populate("items.menuItem");
+
+      updatedCart = cart;
+    }
+  }
+
+  // --- INTENT B: ADD_TO_CART (With Fuzzy Matching & Word-to-Num) ---
+  else if (intent === "ADD_TO_CART") {
+    let cart = await Cart.findOne({ user: req.user._id });
+    if (!cart) {
+      cart = new Cart({ user: req.user._id, items: [] });
+    }
+
+    let matchedCount = 0;
+
+    for (const aiItem of items) {
+      const dish = findMatchingDish(aiItem.name, availableMenu);
+
+      if (dish) {
+        matchedCount++;
+        let qty = parseInt(aiItem.quantity, 10);
+        if (isNaN(qty) || qty <= 0) {
+          qty = WORD_TO_NUM[String(aiItem.quantity).toLowerCase()] || 1;
+        }
+
+        const existingIndex = cart.items.findIndex(
+          (cItem) => cItem.menuItem.toString() === dish._id.toString(),
+        );
+
+        if (existingIndex > -1) {
+          cart.items[existingIndex].quantity += qty;
+        } else {
+          cart.items.push({ menuItem: dish._id, quantity: qty });
+        }
+      }
+    }
+
+    if (matchedCount === 0) {
+      voiceResponse =
+        "Mujhe aap ke bole hue items live menu mein nahi mile. Meherbani karke menu ke mutabiq dobara bolein.";
+    } else {
+      cart.totalAmount = await recalculateCartTotal(cart);
+      await cart.save();
+      await cart.populate("items.menuItem");
+      updatedCart = cart;
+    }
+  }
+
+  // --- INTENT C: CHECK_STATUS ---
+  else if (intent === "CHECK_STATUS") {
+    if (userOrders.length === 0) {
+      voiceResponse = "Aap ne abhi tak koi order place nahi kiya hai.";
+    } else {
+      const latestOrder = userOrders[0];
+      const lockNote = latestOrder.locked
+        ? " aur chef cooking kar rahe hain"
+        : "";
+      voiceResponse = `Aap ke aakhri order ka status filhal ${latestOrder.orderStatus}${lockNote}.`;
+    }
+  }
+
+  // --- INTENT D: PLACE_ORDER (Voice Checkout + Real-time Kitchen Socket) ---
+  else if (intent === "PLACE_ORDER") {
+    const cart = await Cart.findOne({ user: req.user._id }).populate(
+      "items.menuItem",
+    );
+
+    if (!cart || cart.items.length === 0) {
+      voiceResponse =
+        "Aap ka cart abhi khaali hai! Pehle menu se items add karein.";
+    } else {
+      const orderItems = cart.items.map((item) => ({
+        menuItem: item.menuItem._id,
+        name: item.menuItem.name,
+        price: Number(item.menuItem.price),
+        quantity: item.quantity,
+      }));
+
+      const newOrder = await Order.create({
+        user: req.user._id,
+        items: orderItems,
+        totalAmount: cart.totalAmount,
+        source: "VOICE",
+        paymentMethod: "COD",
+        paymentStatus: "PENDING",
+        orderStatus: "PENDING",
+      });
+
+      // Clear cart after order creation
+      cart.items = [];
+      cart.totalAmount = 0;
+      await cart.save();
+
+      // ⚡ REAL-TIME: Kitchen Dashboard par live notification bhejna
+      const io = req.app.get("io");
+      if (io) io.emit("newOrder", newOrder);
+
+      updatedCart = cart;
+      placedOrder = newOrder;
+      voiceResponse = `Zabardast! Aap ka voice order place ho gaya hai. Total bill $${newOrder.totalAmount.toFixed(2)} hai.`;
+    }
+  }
+
+  // =========================================================================
+  // 5. RETURN UNIFIED RESPONSE TO FRONTEND
+  // =========================================================================
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        transcript,
+        actionTaken,
+        voiceResponse,
+        cart: updatedCart,
+        order: placedOrder,
+        rawAIIntent: aiResponse,
+      },
+      "Voice command processed successfully",
+    ),
+  );
 });
