@@ -29,8 +29,8 @@ app.use("/api/menu", menuRouter);
 import { cartRouter } from "./routes/cart.js";
 app.use("/api/cart", cartRouter);
 
-import { OrderRouter } from "./routes/orders.js";
-app.use("/api", OrderRouter);
+import { orderRouter } from "./routes/orders.js";
+app.use("/api/orders", orderRouter);
 
 import { aiRouter } from "./routes/ai.js";
 app.use("/api/ai", aiRouter);

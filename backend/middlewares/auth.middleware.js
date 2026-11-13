@@ -10,8 +10,7 @@ export const verifyJWT = asyncHandler(async (req, _, next) => {
   try {
     // cookie name is "token" (set by loginUser/verifyOtp with .cookie("token", ...))
     const token =
-      req.cookies?.token ||
-      req.header("Authorization")?.replace("Bearer ", "");
+      req.cookies?.token || req.header("Authorization")?.replace("Bearer ", "");
 
     if (!token) {
       throw new ApiError(401, "Invalid Request!");
@@ -70,6 +69,16 @@ export const superAdminMiddleware = (req, res, next) => {
   }
 };
 
+// Add Admin Access Middleware (Role Check)
+// To ensure regular customers cannot update order statuses, create or check src/middlewares/auth.middleware.js for an admin check
+export const verifyAdmin = (req, res, next) => {
+  if (req.user && req.user.role === "super_admin") {
+    next();
+  } else {
+    throw new ApiError(403, "Access denied. Admin resources only.");
+  }
+};
+
 export const authorizedRoles = (...allowedRoles) => {
   return (req, _, next) => {
     // 1. Verify that verifyJWT ran first and attached req.user
@@ -81,11 +90,11 @@ export const authorizedRoles = (...allowedRoles) => {
     if (!allowedRoles.includes(req.user.role)) {
       throw new ApiError(
         403,
-        `Access denied. Role '${req.user.role}' is not authorized to perform this action.`
+        `Access denied. Role '${req.user.role}' is not authorized to perform this action.`,
       );
     }
 
     // 3. User is authorized, pass control to next middleware/controller
     next();
   };
-}
+};
