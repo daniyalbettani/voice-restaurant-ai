@@ -32,8 +32,8 @@ app.use("/api/cart", cartRouter);
 import { OrderRouter } from "./routes/orders.js";
 app.use("/api", OrderRouter);
 
-import { voiceParseRouter } from "./routes/ai.js";
-app.use("/api", voiceParseRouter);
+import { aiRouter } from "./routes/ai.js";
+app.use("/api/ai", aiRouter);
 
 app.use(errorHandler);
 

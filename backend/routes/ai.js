@@ -1,7 +1,11 @@
 import { Router } from "express";
-import { voiceParser } from "../controllers/ai.controller.js";
+import { processVoiceCommand } from "../controllers/ai.controller.js";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
 
-export const voiceParseRouter = Router();
+export const aiRouter = Router();
 
-// ── POST /api/voice-parse ─────────────────────────────────────────────────────
-voiceParseRouter.post("/voice-parse", voiceParser);
+// Tamam AI voice routes ko JWT authentication se protect karein
+aiRouter.use(verifyJWT);
+
+// Voice command processing endpoint
+aiRouter.post("/process-voice", processVoiceCommand);
