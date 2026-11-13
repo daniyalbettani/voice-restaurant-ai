@@ -1,5 +1,5 @@
-import { Order } from "../models/OrderSchema.model.js";
-import { Cart } from "../models/CartSchema.model.js";
+import { Order } from "../models/Order.js";
+import { Cart } from "../models/Cart.js";
 import { User } from "../models/User.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
