@@ -294,7 +294,7 @@ const TrackOrdersPage = () => {
                   <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
                     {/* Animated source badge */}
                     <span style={{ fontSize:'11px', color:'rgba(255,255,255,0.7)', fontWeight:600 }}>
-                      via {order.source === 'chat' ? '💬 Chat' : order.source === 'voice' ? '🎤 Voice' : '🛒 Cart'}
+                      via {order.source?.toUpperCase() === 'CHAT' ? '💬 Chat' : order.source?.toUpperCase() === 'VOICE' ? '🎤 Voice' : '🛒 Cart'}
                     </span>
                     <span style={{ ...S.ribbonStatus, animation: order.status === 'preparing' ? 'progressPulse 1.5s ease-in-out infinite' : 'none' }}>
                       {order.status.toUpperCase()}
