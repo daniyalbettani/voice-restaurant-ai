@@ -149,26 +149,40 @@ const ChatBot = () => {
         return;
       }
 
-      // ── 3. Send to AI ──────────────────────────────────────────────────────
-      const res  = await fetch(`${API}/api/voice-parse`, {
+      // ── 3. Send to AI (new Gemini endpoint) ─────────────────────────────
+      const chatToken = localStorage.getItem('vb_token');
+      const res  = await fetch(`${API}/api/ai/process-voice`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: text, menu }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(chatToken ? { Authorization: `Bearer ${chatToken}` } : {}),
+        },
+        body: JSON.stringify({ transcript: text }),
       });
       const data = await res.json();
 
-      if (data.intent === 'order' && data.items?.length > 0) {
-        const items = data.items;
-        const total = items.reduce((s, i) => s + i.price * i.quantity, 0);
-        pushMsg('bot', data.message || "Here's your order summary:");
-        setPendingOrder(items);
-        pushMsg('bot', '', { isOrderSummary: true, items, total });
-        pushMsg('bot', 'Would you like to confirm this order? Type **yes** to place it, or **no** to cancel. 👆');
-      } else if (data.intent === 'no_ai') {
-        pushMsg('bot', "🤔 I'm having trouble understanding right now. Please try rephrasing, or type items like: \"1 burger and 2 cokes\".");
+      // ApiResponse wrapper: { data: { actionTaken, voiceResponse, cart } }
+      const result = data?.data || data;
+      const actionTaken = result?.actionTaken || 'GENERAL_QUERY';
+      const voiceResponse = result?.voiceResponse || result?.message || "I didn't quite catch that.";
+
+      if (actionTaken === 'ADD_TO_CART' && result?.cart?.items?.length > 0) {
+        // Items added to DB cart — show summary from server cart
+        const items = result.cart.items
+          .filter(i => i.menuItem)
+          .map(i => ({ name: i.menuItem.name || i.name, price: i.menuItem.price || 0, quantity: i.quantity }));
+        const total = result.cart.totalAmount || items.reduce((s, i) => s + i.price * i.quantity, 0);
+        pushMsg('bot', voiceResponse);
+        if (items.length > 0) {
+          setPendingOrder(items);
+          pushMsg('bot', '', { isOrderSummary: true, items, total });
+          pushMsg('bot', 'Would you like to confirm this order? Type **yes** to place it, or **no** to cancel. 👆');
+        }
+      } else if (actionTaken === 'PLACE_ORDER') {
+        pushMsg('bot', voiceResponse);
+        setPendingOrder(null);
       } else {
-        const msg = data.message || "I didn't quite catch that. Could you rephrase your order?";
-        pushMsg('bot', msg);
+        pushMsg('bot', voiceResponse);
       }
     } catch {
       pushMsg('bot', '⚠️ Connection error. Please check your internet and try again.');

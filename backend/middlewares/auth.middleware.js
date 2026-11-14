@@ -71,11 +71,13 @@ export const superAdminMiddleware = (req, res, next) => {
 
 // Add Admin Access Middleware (Role Check)
 // To ensure regular customers cannot update order statuses, create or check src/middlewares/auth.middleware.js for an admin check
+// Admin / Staff Role Check (staff, sub_admin, super_admin can access kitchen routes)
 export const verifyAdmin = (req, res, next) => {
-  if (req.user && req.user.role === "super_admin") {
+  const ADMIN_ROLES = ["staff", "sub_admin", "super_admin"];
+  if (req.user && ADMIN_ROLES.includes(req.user.role)) {
     next();
   } else {
-    throw new ApiError(403, "Access denied. Admin resources only.");
+    throw new ApiError(403, "Access denied. Staff or Admin resources only.");
   }
 };
 

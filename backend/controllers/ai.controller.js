@@ -1,6 +1,6 @@
-import { Order } from "../models/OrderSchema.model.js";
-import { Cart } from "../models/CartSchema.model.js";
-import { Menu } from "../models/MenuSchema.model.js";
+import { Order } from "../models/Order.js";
+import { Cart } from "../models/Cart.js";
+import { Menu } from "../models/Menu.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -110,7 +110,7 @@ export const processVoiceCommand = asyncHandler(async (req, res) => {
   });
   const formattedOrderHistory = formatOrderHistoryForAI(userOrders, 3);
 
-  const availableMenu = await Menu.find({ isAvailable: true }).select(
+  const availableMenu = await Menu.find({ available: { $ne: false } }).select(
     "name price category description",
   );
   const menuListString = availableMenu

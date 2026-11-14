@@ -37,14 +37,20 @@ const TrackOrdersPage = () => {
   const fetchActiveOrders = async (currentUser) => {
     if (!currentUser) return;
     try {
-      const uid  = currentUser._id || currentUser.id;
-      const res  = await fetch(`${API}/api/orders/user/${uid}`);
+      const token = localStorage.getItem('vb_token');
+      const res  = await fetch(`${API}/api/orders/my-orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
-      if (Array.isArray(data)) {
-        const active = data.filter(o =>
-          ['pending', 'preparing', 'ready'].includes(o.status) &&
-          (Date.now() - new Date(o.createdAt).getTime()) < 24 * 60 * 60 * 1000
-        );
+      // ApiResponse wrapper: { data: [...] }
+      const ordersArr = data?.data ?? data;
+      if (Array.isArray(ordersArr)) {
+        const active = ordersArr
+          .map(o => ({ ...o, status: (o.orderStatus || o.status || '').toLowerCase(), total: o.totalAmount ?? o.total ?? 0 }))
+          .filter(o =>
+            ['pending', 'preparing', 'ready'].includes(o.status) &&
+            (Date.now() - new Date(o.createdAt).getTime()) < 24 * 60 * 60 * 1000
+          );
         setOrders(active);
       }
     } catch (err) {
@@ -103,9 +109,10 @@ const TrackOrdersPage = () => {
   const handleCancel = async (orderId) => {
     if (!window.confirm('⚠️ Are you sure you want to cancel this order?')) return;
     try {
+      const token = localStorage.getItem('vb_token');
       const res  = await fetch(`${API}/api/orders/${orderId}/cancel`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -125,9 +132,10 @@ const TrackOrdersPage = () => {
       '🔒 Final Confirm?\n\nThis will allow the chef to start cooking RIGHT NOW.\nYou will NOT be able to cancel after this.'
     )) return;
     try {
+      const token = localStorage.getItem('vb_token');
       const res  = await fetch(`${API}/api/orders/${orderId}/lock`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {

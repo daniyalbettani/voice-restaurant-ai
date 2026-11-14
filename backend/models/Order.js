@@ -1,10 +1,8 @@
 import mongoose from "mongoose";
 
-// Snapshot Schema for items inside an order
-
+// Snapshot Schema for items inside an order.
 // In the Cart, we read prices from the Menu so they are always fresh.
 // In the Order, we copy and freeze the prices so your receipt never changes.
-import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -36,7 +34,7 @@ const orderSchema = new mongoose.Schema(
     },
     customerNote: { type: String, default: "" },
     source: { type: String, enum: ["CART", "VOICE", "CHAT"], default: "CART" },
-    locked: { type: Boolean, default: false }, // Chef lock status
+    locked: { type: Boolean, default: false }, // Chef lock — prevents customer cancellation
   },
   { timestamps: true },
 );

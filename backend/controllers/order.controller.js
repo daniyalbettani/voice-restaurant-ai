@@ -1,6 +1,6 @@
 import { Order } from "../models/Order.js";
 import { Cart } from "../models/Cart.js";
-import { User } from "../models/User.model.js";
+import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -205,4 +205,71 @@ export const getMyOrders = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(new ApiResponse(200, orders, "User orders fetched successfully"));
+});
+
+
+/**
+ * Update order status (Admin / Staff)
+ * PATCH /api/orders/:id/status   body: { status }
+ */
+export const updateOrderStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const VALID_STATUSES = ["PENDING", "PREPARING", "READY", "DELIVERED", "CANCELLED"];
+  if (!status || !VALID_STATUSES.includes(status.toUpperCase())) {
+    throw new ApiError(400, `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}`);
+  }
+
+  const order = await Order.findById(id);
+  if (!order) throw new ApiError(404, "Order not found");
+
+  order.orderStatus = status.toUpperCase();
+  await order.save();
+
+  const io = req.app.get("io");
+  if (io) io.emit("orderUpdated", order);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, order, "Order status updated successfully"));
+});
+
+/**
+ * Delete a single order (Admin / Super Admin)
+ * DELETE /api/orders/:id
+ */
+export const deleteOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const order = await Order.findByIdAndDelete(id);
+  if (!order) throw new ApiError(404, "Order not found");
+
+  const io = req.app.get("io");
+  if (io) io.emit("orderDeleted", id);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { _id: id }, "Order deleted successfully"));
+});
+
+/**
+ * Bulk delete orders (Admin / Super Admin)
+ * DELETE /api/orders/bulk   body: { ids: ["id1", "id2", ...] }
+ */
+export const bulkDeleteOrders = asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new ApiError(400, "ids must be a non-empty array");
+  }
+
+  await Order.deleteMany({ _id: { $in: ids } });
+
+  const io = req.app.get("io");
+  if (io) ids.forEach((id) => io.emit("orderDeleted", id));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { deleted: ids.length }, `${ids.length} orders deleted`));
 });

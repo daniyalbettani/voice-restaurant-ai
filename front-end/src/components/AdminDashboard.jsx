@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import AddMenuItem from "./AddMenuItem";
@@ -36,6 +36,13 @@ const ROLE_LABEL = {
 };
 
 const CANCEL_WINDOW_MS = 5 * 60 * 1000;
+
+// Normalize backend order: map orderStatus (UPPERCASE) + totalAmount → frontend shape
+const normalizeOrder = (o) => ({
+  ...o,
+  status: (o.orderStatus || o.status || 'pending').toLowerCase(),
+  total: o.totalAmount ?? o.total ?? 0,
+});
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -119,14 +126,24 @@ const AdminDashboard = () => {
   const fetchAll = async () => {
     try {
       const [oRes, sRes] = await Promise.all([
-        fetch(`${API}/api/orders`, { headers: authHeader }),
-        fetch(`${API}/api/stats`, { headers: authHeader }),
+        fetch(`${API}/api/orders/admin/all`, { headers: authHeader }),
+        fetch(`${API}/api/orders/admin/stats`, { headers: authHeader }),
       ]);
       const [oData, sData] = await Promise.all([oRes.json(), sRes.json()]);
 
-      setOrders(Array.isArray(oData) ? oData : []);
-      if (sData && !sData.message) {
-        setStats(sData);
+      // ApiResponse wrapper: { data: [...] }
+      const ordersArr = oData?.data ?? oData;
+      setOrders(Array.isArray(ordersArr) ? ordersArr.map(normalizeOrder) : []);
+      const statsObj = sData?.data ?? sData;
+      if (statsObj && !statsObj.message) {
+        setStats({
+          total:    statsObj.totalOrders   ?? statsObj.total    ?? 0,
+          pending:  statsObj.pending  ?? 0,
+          preparing: statsObj.preparing ?? 0,
+          ready:    statsObj.ready    ?? 0,
+          done:     statsObj.delivered ?? statsObj.done ?? 0,
+          revenue:  statsObj.totalRevenue ?? statsObj.revenue ?? 0,
+        });
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -156,11 +173,11 @@ const AdminDashboard = () => {
     fetchAll();
     const socket = io(API, { transports: ["websocket", "polling"] });
     socket.on("newOrder", (o) => {
-      setOrders((p) => [o, ...p]);
+      setOrders((p) => [normalizeOrder(o), ...p]);
       fetchAll();
     });
     socket.on("orderUpdated", (u) => {
-      setOrders((p) => p.map((o) => (o._id === u._id ? u : o)));
+      setOrders((p) => p.map((o) => (o._id === u._id ? normalizeOrder(u) : o)));
       fetchAll();
     });
     socket.on("orderDeleted", (id) => {
@@ -253,7 +270,7 @@ const AdminDashboard = () => {
       return;
     setBulkDel(true);
     try {
-      const res = await fetch(`${API}/api/orders`, {
+      const res = await fetch(`${API}/api/orders/bulk`, {
         method: "DELETE",
         headers: authHeader,
         body: JSON.stringify({ ids: [...selected] }),
@@ -273,7 +290,7 @@ const AdminDashboard = () => {
     setBulkDel(true);
     try {
       const ids = orders.map((o) => o._id);
-      const res = await fetch(`${API}/api/orders`, {
+      const res = await fetch(`${API}/api/orders/bulk`, {
         method: "DELETE",
         headers: authHeader,
         body: JSON.stringify({ ids }),

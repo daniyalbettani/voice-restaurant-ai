@@ -22,23 +22,20 @@ const CartDrawer = () => {
     setPlacing(true);
     try {
       const token = localStorage.getItem('vb_token');
-      const res = await fetch(`${API}/api/order`, {
+      const res = await fetch(`${API}/api/orders`, {
         method:  'POST',
         headers: {
           'Content-Type':  'application/json',
           Authorization:   `Bearer ${token}`,
         },
         body: JSON.stringify({
-          items:  cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
-          total:  cartTotal,
-          userId: isLoggedIn ? (user._id || user.id) : null,
           source: 'cart',
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        // ApiResponse wrapper: data.data.order or data.order
-        const order = data.data?.order || data.order || data.data || data;
+        // ApiResponse wrapper: { data: <order> }
+        const order = data.data || data;
         const id    = order?._id || order?.id || '';
         setOrderNum(id.toString().slice(-6).toUpperCase());
         setSuccess(true);

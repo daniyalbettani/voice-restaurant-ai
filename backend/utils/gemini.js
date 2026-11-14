@@ -2,10 +2,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Updated active Gemini models for new API keys
+// Active Gemini models with automatic fallback
 const CANDIDATE_MODELS = [
-  "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
+  "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
 ];
 
