@@ -1,5 +1,4 @@
 import { Server } from "socket.io";
-import { setIo } from "../controllers/order.controller.js";
 
 let io;
 
@@ -11,8 +10,6 @@ export const initSocket = (server) => {
       credentials: true,
     },
   });
-
-  setIo(io);
 
   io.on("connection", (socket) => {
     console.log("🔌 Client connected:", socket.id);

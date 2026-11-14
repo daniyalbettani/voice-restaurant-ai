@@ -6,8 +6,9 @@ import { initSocket } from "./sockets/socket.js";
 
 const server = http.createServer(app);
 
-// Initialize Socket.io
-initSocket(server);
+// Initialize Socket.io and store instance on app so controllers can reach it via req.app.get("io")
+const io = initSocket(server);
+app.set("io", io);
 
 // ─── Database & Server Start ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
