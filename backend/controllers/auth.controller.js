@@ -6,17 +6,16 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendOTPEmail } from "../utils/email.js";
 
-const JWT_SECRET = process.env.JWT_SECRET_KEY || "voicebite_secret_2024";
+const JWT_SECRET = process.env.JWT_SECRET_KEY;
 
 // In-memory OTP store — email → { otp, data, expiresAt }
 const otpStore = new Map();
 
 /**
  * @desc    Step 1: Request OTP for Registration
- * @route   POST /api/v1/auth/send-otp
+ * @route   POST /api/auth/send-otp
  * @access  Public
  */
-
 export const sendOtp = asyncHandler(async (req, res) => {
   const { name, email, password, phone } = req.body;
   if (!name || !email || !password) {
@@ -27,16 +26,13 @@ export const sendOtp = asyncHandler(async (req, res) => {
   }
   const normalizedEmail = email.toLowerCase().trim();
 
-  // 2. Check if user already exists in MongoDB
   const existingEmail = await User.findOne({ email: normalizedEmail });
   if (existingEmail) {
     throw new ApiError(409, "An account with this email already exists!");
   }
 
-  // 3. Generate a secure random 6-digit OTP string
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  //4 Save registration details in RAM with a 10min expiry.
   otpStore.set(normalizedEmail, {
     otp,
     data: {
@@ -45,19 +41,16 @@ export const sendOtp = asyncHandler(async (req, res) => {
       password,
       phone: phone || "",
     },
-    expiresAt: Date.now() + 10 * 60 * 1000, // 10min in millisecdons
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 min
   });
 
   try {
-    // 5. Send OTP via Brevo HTTPS API
     await sendOTPEmail(normalizedEmail, otp, name);
     return res
       .status(200)
       .json(new ApiResponse(200, null, "OTP sent to your email successfully!"));
   } catch (error) {
-    // RollBack/delete OTP storage agar email send nahi hota
     otpStore.delete(normalizedEmail);
-
     console.log("Error sending email:", error);
     throw new ApiError(500, "Failed to send OTP. Please try again later.");
   }
@@ -65,10 +58,9 @@ export const sendOtp = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Step 2: Verify OTP and Save User to MongoDB
- * @route   POST /api/v1/auth/verify-otp
+ * @route   POST /api/auth/verify-otp
  * @access  Public
  */
-
 export const verifyOtp = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
 
@@ -80,10 +72,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   const record = otpStore.get(normalizedEmail);
 
   if (!record) {
-    throw new ApiError(
-      400,
-      "No OTP found for this email. Please register again.",
-    );
+    throw new ApiError(400, "No OTP found for this email. Please register again.");
   }
 
   if (Date.now() > record.expiresAt) {
@@ -92,10 +81,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   }
 
   if (record.otp !== otp.trim()) {
-    throw new ApiError(
-      400,
-      "Incorrect OTP code. Please check your inbox and try again.",
-    );
+    throw new ApiError(400, "Incorrect OTP code. Please check your inbox and try again.");
   }
 
   const { name, password, phone } = record.data;
@@ -105,21 +91,15 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   const role = normalizedEmail === superAdminEmail ? "super_admin" : "customer";
 
   try {
-    const user = await User.create({
-      name,
-      email: normalizedEmail,
-      password,
-      phone,
-      role,
-    });
+    const user = await User.create({ name, email: normalizedEmail, password, phone, role });
 
     const token = user.generateAccessToken();
 
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     };
 
     const userResponse = {
@@ -133,56 +113,44 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     return res
       .status(201)
       .cookie("token", token, cookieOptions)
-      .json(
-        new ApiResponse(
-          201,
-          { user: userResponse, token },
-          "Account created successfully!",
-        ),
-      );
+      .json(new ApiResponse(201, { user: userResponse, token }, "Account created successfully!"));
   } catch (error) {
     console.error("Error verifying OTP / creating user:", error);
-    throw new ApiError(
-      500,
-      "Failed to verify OTP and create account. Please try again later.",
-    );
+    throw new ApiError(500, "Failed to create account. Please try again later.");
   }
 });
 
 /**
- * @desc    Login existing user & issue JWT via HTTP-Only Cookie
- * @route   POST /api/v1/auth/login
+ * @desc    Login existing user & issue JWT
+ * @route   POST /api/auth/login
  * @access  Public
  */
-
 export const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body; // 1. Input Validation
+  const { email, password } = req.body;
 
   if (!email || !password) {
     throw new ApiError(400, "Email and password are required");
   }
 
   const normalizedEmail = email.toLowerCase().trim();
-  // 2. Check if user exists in MongoDB
-
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
     throw new ApiError(404, "Invalid user credentials");
-  } // 3. Verify Password via bcrypt.compare()
+  }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     throw new ApiError(401, "Invalid user credentials");
-  } // 4. Generate JWT Token using our custom Mongoose method
+  }
 
-  const token = user.generateAccessToken(); // 5. Configure Secure HTTP-Only Cookie options
+  const token = user.generateAccessToken();
 
   const cookieOptions = {
-    httpOnly: true, // Blocks JavaScript access (XSS protection)
-    secure: process.env.NODE_ENV === "production", // Enforces HTTPS in production
-    sameSite: "strict", // Blocks CSRF attacks
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  }; // 6. Return response with HTTP-Only Cookie attached
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  };
 
   const userResponse = {
     id: user._id,
@@ -195,19 +163,18 @@ export const loginUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .cookie("token", token, cookieOptions)
-    .json(
-      new ApiResponse(
-        200,
-        { user: userResponse, token },
-        "User logged in successfully!",
-      ),
-    );
+    .json(new ApiResponse(200, { user: userResponse, token }, "User logged in successfully!"));
 });
 
+/**
+ * @desc    Logout
+ * @route   POST /api/auth/log-out
+ * @access  Private
+ */
 export const logOut = asyncHandler(async (req, res) => {
   const cookieOptions = {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
     secure: process.env.NODE_ENV === "production",
   };
   return res
@@ -218,168 +185,154 @@ export const logOut = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Get logged-in user profile
- * @route   GET /api/v1/auth/me
+ * @route   GET /api/auth/me
  * @access  Private
  */
 export const getCurrentUser = asyncHandler(async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
-    return res.status(200).json(user);
-  } catch {
-    return res.status(500).json({ message: "Server error" });
+  // req.user is a full Mongoose doc set by verifyJWT — use _id
+  const user = await User.findById(req.user._id).select("-password");
+  if (!user) {
+    throw new ApiError(404, "User not found");
   }
+  return res.status(200).json(
+    new ApiResponse(200, {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      avatarUrl: user.avatarUrl,
+    }, "User profile fetched")
+  );
 });
 
-// Resend OTP Controller logic
-
+/**
+ * @desc    Resend OTP
+ * @route   POST /api/auth/resend-otp
+ * @access  Public
+ */
 export const resendOtp = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const cleanEmail = email.toLowerCase();
+  const record = otpStore.get(cleanEmail);
+
+  if (!record) {
+    return res.status(400).json({ message: "No pending registration found. Please start over." });
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  otpStore.set(cleanEmail, { ...record, otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+
   try {
-    const { email } = req.body;
-    const cleanEmail = email.toLowerCase();
-    const record = otpStore.get(cleanEmail);
-
-    if (!record)
-      return res
-        .status(400)
-        .json({ message: "No pending registration found. Please start over." });
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore.set(cleanEmail, {
-      ...record,
-      otp,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    });
-
-    try {
-      await sendOTPEmail(cleanEmail, otp, record.data.name);
-      return res.status(200).json({ message: "New OTP sent to your email." });
-    } catch (emailErr) {
-      console.error("❌ Resend OTP Email Error:", emailErr.message);
-      return res.status(500).json({ message: "Failed to resend OTP email." });
-    }
-  } catch (err) {
-    console.error("❌ Resend OTP Error:", err);
-    return res.status(500).json({ message: "Failed to resend OTP." });
+    await sendOTPEmail(cleanEmail, otp, record.data.name);
+    return res.status(200).json({ message: "New OTP sent to your email." });
+  } catch (emailErr) {
+    console.error("❌ Resend OTP Email Error:", emailErr.message);
+    return res.status(500).json({ message: "Failed to resend OTP email." });
   }
 });
 
-// User name changes logic controller
-
+/**
+ * @desc    Update user profile (name, email, avatar)
+ * @route   PATCH /api/auth/profile
+ * @access  Private
+ */
 export const updateProfile = asyncHandler(async (req, res) => {
-  try {
-    const { name, email, avatarUrl } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+  const { name, email, avatarUrl } = req.body;
+  const user = await User.findById(req.user._id); // ← use _id
+  if (!user) throw new ApiError(404, "User not found");
 
-    if (name && name.trim() !== user.name) {
-      if (user.nameChangedAt) {
-        const daysSince =
-          (Date.now() - new Date(user.nameChangedAt)) / (1000 * 60 * 60 * 24);
-        if (daysSince < 7) {
-          const daysLeft = Math.ceil(7 - daysSince);
-          return res.status(400).json({
-            message: `You can change your name again in ${daysLeft} day(s)`,
-          });
-        }
+  if (name && name.trim() !== user.name) {
+    if (user.nameChangedAt) {
+      const daysSince = (Date.now() - new Date(user.nameChangedAt)) / (1000 * 60 * 60 * 24);
+      if (daysSince < 7) {
+        const daysLeft = Math.ceil(7 - daysSince);
+        return res.status(400).json({ message: `You can change your name again in ${daysLeft} day(s)` });
       }
-      user.name = name.trim();
-      user.nameChangedAt = new Date();
     }
-
-    if (email && email.toLowerCase() !== user.email) {
-      const existing = await User.findOne({ email: email.toLowerCase() });
-      if (existing)
-        return res
-          .status(409)
-          .json({ message: "This email is already in use by another account" });
-      user.email = email.toLowerCase();
-    }
-
-    if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
-    await user.save();
-
-    const token = jwt.sign(
-      { id: user._id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
-      { expiresIn: "7d" },
-    );
-
-    return res.status(200).json({
-      message: "Profile updated successfully",
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        nameChangedAt: user.nameChangedAt,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error updating profile" });
+    user.name = name.trim();
+    user.nameChangedAt = new Date();
   }
+
+  if (email && email.toLowerCase() !== user.email) {
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing) {
+      return res.status(409).json({ message: "This email is already in use by another account" });
+    }
+    user.email = email.toLowerCase();
+  }
+
+  if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+  await user.save();
+
+  // Issue a fresh token with updated payload
+  const token = user.generateAccessToken();
+
+  return res.status(200).json({
+    message: "Profile updated successfully",
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      nameChangedAt: user.nameChangedAt,
+    },
+  });
 });
 
-// User account deletion controller logic
-
+/**
+ * @desc    Delete user account
+ * @route   DELETE /api/auth/account
+ * @access  Private
+ */
 export const deleteAccount = asyncHandler(async (req, res) => {
-  try {
-    const target = await User.findById(req.user.id);
-    if (!target) return res.status(404).json({ message: "User not found" });
+  const target = await User.findById(req.user._id); // ← use _id
+  if (!target) throw new ApiError(404, "User not found");
 
-    if (target.role === "super_admin") {
-      const subAdmin = await User.findOne({ role: "sub_admin" });
-      if (subAdmin) {
-        subAdmin.role = "super_admin";
-        await subAdmin.save();
-        console.log(`👑 Sub admin ${subAdmin.email} promoted to Super Admin.`);
-      }
+  if (target.role === "super_admin") {
+    const subAdmin = await User.findOne({ role: "sub_admin" });
+    if (subAdmin) {
+      subAdmin.role = "super_admin";
+      await subAdmin.save();
+      console.log(`👑 Sub admin ${subAdmin.email} promoted to Super Admin.`);
     }
-
-    await User.findByIdAndDelete(req.user.id);
-    return res.status(200).json({ message: "Account deleted successfully" });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error deleting account" });
   }
+
+  await User.findByIdAndDelete(req.user._id);
+  return res.status(200).json({ message: "Account deleted successfully" });
 });
 
-// getting admin user
+/**
+ * @desc    Get all users (Super Admin)
+ * @route   GET /api/auth/admin/users
+ * @access  Super Admin
+ */
 export const getAdminUsers = asyncHandler(async (req, res) => {
-  try {
-    const users = await User.find().select("-password").sort({ createdAt: -1 });
-    return res.status(200).json(users);
-  } catch {
-    return res.status(500).json({ message: "Server error" });
-  }
+  const users = await User.find().select("-password").sort({ createdAt: -1 });
+  return res.status(200).json(users);
 });
 
-// assigning role by the admin controller logic
+/**
+ * @desc    Update user role (Super Admin)
+ * @route   PATCH /api/auth/admin/users/:id/role
+ * @access  Super Admin
+ */
 export const updateUserRole = asyncHandler(async (req, res) => {
-  try {
-    const { role } = req.body;
-    if (!["customer", "staff", "sub_admin"].includes(role))
-      return res
-        .status(400)
-        .json({ message: "Role must be customer, staff or sub_admin" });
-
-    const target = await User.findById(req.params.id);
-    if (!target) return res.status(404).json({ message: "User not found" });
-    if (target.role === "super_admin")
-      return res
-        .status(403)
-        .json({ message: "Cannot change super admin role" });
-
-    target.role = role;
-    await target.save();
-    return res
-      .status(200)
-      .json({ message: `Role updated to ${role}`, user: target });
-  } catch {
-    return res.status(500).json({ message: "Server error" });
+  const { role } = req.body;
+  if (!["customer", "staff", "sub_admin"].includes(role)) {
+    return res.status(400).json({ message: "Role must be customer, staff or sub_admin" });
   }
+
+  const target = await User.findById(req.params.id);
+  if (!target) return res.status(404).json({ message: "User not found" });
+  if (target.role === "super_admin") {
+    return res.status(403).json({ message: "Cannot change super admin role" });
+  }
+
+  target.role = role;
+  await target.save();
+  return res.status(200).json({ message: `Role updated to ${role}`, user: target });
 });

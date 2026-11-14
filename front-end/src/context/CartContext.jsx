@@ -16,16 +16,27 @@ const getToken = () => {
 const authHeader = () => ({ Authorization: `Bearer ${getToken()}` });
 
 /**
+ * Force-logout helper: clears all stored tokens and fires events so
+ * AuthContext and CartContext both reset, then redirects to home.
+ * Called whenever any API call returns 401 (token expired / invalid).
+ */
+const forceLogout = () => {
+  localStorage.removeItem('vb_token');
+  localStorage.removeItem('vb_user');
+  localStorage.removeItem('vb_admin_token');
+  localStorage.removeItem('vb_admin_user');
+  window.dispatchEvent(new Event('vb_user_change'));
+  window.dispatchEvent(new Event('vb_auth_change'));
+};
+
+/**
  * Flatten a backend cart document into the flat array the UI expects:
  *   [ { _id, name, price, imageUrl, emoji, category, quantity }, ... ]
- *
- * The backend stores items as { menuItem: <Menu document>, quantity },
- * so we pull all the dish fields up to the top level.
  */
 const normaliseCart = (backendCart) => {
   if (!backendCart || !Array.isArray(backendCart.items)) return [];
   return backendCart.items
-    .filter(i => i.menuItem)                // drop orphaned ObjectId refs
+    .filter(i => i.menuItem)
     .map(i => ({
       _id:      i.menuItem._id,
       name:     i.menuItem.name,
@@ -46,7 +57,6 @@ export const CartProvider = ({ children }) => {
   const [authRequired, setAuthRequired] = useState(false);
   const [loading,      setLoading]      = useState(false);
 
-  // Prevent duplicate simultaneous mutations (e.g. rapid +/- clicks)
   const busy = useRef(false);
 
   // ── Apply a backend cart response to local state ───────────────────────────
@@ -59,7 +69,6 @@ export const CartProvider = ({ children }) => {
   const fetchCart = useCallback(async () => {
     const token = getToken();
     if (!token) {
-      // User is logged out — wipe the cart display immediately
       setCart([]);
       setCartTotal(0);
       return;
@@ -67,6 +76,12 @@ export const CartProvider = ({ children }) => {
     try {
       setLoading(true);
       const res  = await fetch(`${API}/api/cart`, { headers: authHeader() });
+      if (res.status === 401) {
+        forceLogout();
+        setCart([]);
+        setCartTotal(0);
+        return;
+      }
       const data = await res.json();
       applyCart(data.data || data);
     } catch (err) {
@@ -76,20 +91,9 @@ export const CartProvider = ({ children }) => {
     }
   }, [applyCart]);
 
-  /**
-   * WHY we re-fetch on login / logout events:
-   *
-   * LOGIN  → user just got a JWT, so we immediately load their saved cart
-   *          from MongoDB instead of showing an empty cart.
-   *
-   * LOGOUT → token is gone so getToken() returns null, and fetchCart()
-   *          sets cart = [] so the UI shows an empty cart — no stale
-   *          items from the previous session stay visible.
-   *
-   * Both events are dispatched by AuthContext via window.dispatchEvent().
-   */
+  // Re-fetch cart on login/logout events
   useEffect(() => {
-    fetchCart(); // load on mount (handles page refresh while still logged in)
+    fetchCart();
     const handle = () => fetchCart();
     window.addEventListener('vb_auth_change', handle);
     window.addEventListener('vb_user_change', handle);
@@ -110,6 +114,7 @@ export const CartProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body:    JSON.stringify({ menuItemId: item._id, quantity }),
       });
+      if (res.status === 401) { forceLogout(); return false; }
       const data = await res.json();
       if (res.ok) { applyCart(data.data || data); return true; }
       console.error('addToCart failed:', data.message);
@@ -126,14 +131,13 @@ export const CartProvider = ({ children }) => {
         method:  'DELETE',
         headers: authHeader(),
       });
+      if (res.status === 401) { forceLogout(); return; }
       const data = await res.json();
       if (res.ok) applyCart(data.data || data);
     } catch (err) { console.error('removeFromCart error:', err); }
   }, [applyCart]);
 
-  // ── Update exact quantity — single PATCH call ─────────────────────────────
-  // Previously this was a workaround (delete + re-add). Now it's a direct
-  // PATCH /api/cart/update/:menuItemId with the new quantity.
+  // ── Update exact quantity ──────────────────────────────────────────────────
   const updateQty = useCallback(async (menuItemId, newQty) => {
     if (!getToken()) return;
     if (newQty <= 0) { removeFromCart(menuItemId); return; }
@@ -145,15 +149,14 @@ export const CartProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body:    JSON.stringify({ quantity: newQty }),
       });
+      if (res.status === 401) { forceLogout(); return; }
       const data = await res.json();
       if (res.ok) applyCart(data.data || data);
     } catch (err) { console.error('updateQty error:', err); }
     finally { busy.current = false; }
   }, [applyCart, removeFromCart]);
 
-  // ── Clear entire cart — single DELETE call ────────────────────────────────
-  // Previously this fired N parallel deletes (one per item). Now it's a
-  // single DELETE /api/cart/clear that wipes everything in MongoDB at once.
+  // ── Clear entire cart ──────────────────────────────────────────────────────
   const clearCart = useCallback(async () => {
     if (!getToken()) { setCart([]); setCartTotal(0); return; }
     try {
@@ -161,12 +164,12 @@ export const CartProvider = ({ children }) => {
         method:  'DELETE',
         headers: authHeader(),
       });
+      if (res.status === 401) { forceLogout(); return; }
       const data = await res.json();
       if (res.ok) applyCart(data.data || data);
     } catch (err) { console.error('clearCart error:', err); }
   }, [applyCart]);
 
-  // ── Derived values ─────────────────────────────────────────────────────────
   const cartCount = cart.reduce((acc, i) => acc + i.quantity, 0);
 
   return (

@@ -5,98 +5,111 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY;
 
-// Verifies any logged-in user (reads token from cookie OR Authorization header)
+// ─── verifyJWT ────────────────────────────────────────────────────────────────
+// Reads token from cookie OR Authorization: Bearer header.
+// Sets req.user to the full Mongoose User document.
+// All controllers must use req.user._id (Mongoose doc), not req.user.id.
 export const verifyJWT = asyncHandler(async (req, _, next) => {
   try {
-    // cookie name is "token" (set by loginUser/verifyOtp with .cookie("token", ...))
     const token =
-      req.cookies?.token || req.header("Authorization")?.replace("Bearer ", "");
+      req.cookies?.token ||
+      req.header("Authorization")?.replace(/^Bearer\s+/i, "");
 
     if (!token) {
-      throw new ApiError(401, "Invalid Request!");
+      throw new ApiError(401, "Authentication required. Please log in.");
     }
 
-    const decodedToken = jwt.verify(token, JWT_SECRET);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (jwtErr) {
+      if (jwtErr.name === "TokenExpiredError") {
+        throw new ApiError(401, "Session expired. Please log in again.");
+      }
+      throw new ApiError(401, "Invalid token. Please log in again.");
+    }
 
-    // JWT payload uses "id" (set in generateAccessToken as { id: this._id })
-    const user = await User.findById(decodedToken?.id).select(
-      "-password -refreshToken",
-    );
+    // JWT payload uses field "id" (set in generateAccessToken as { id: this._id })
+    const user = await User.findById(decoded.id).select("-password");
     if (!user) {
-      throw new ApiError(401, "Invalid Access Token!");
+      throw new ApiError(401, "User account not found. Please log in again.");
     }
 
-    req.user = user;
+    req.user = user; // full Mongoose doc — has ._id, .role, .name, .email
     next();
   } catch (error) {
-    throw new ApiError(401, error?.message || "Invalid Token");
+    // Re-throw ApiErrors as-is; wrap anything else
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(401, error?.message || "Authentication failed.");
   }
 });
 
-// Verifies staff, sub_admin, or super_admin
-export const staffMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "No token provided" });
+// ─── staffMiddleware ──────────────────────────────────────────────────────────
+// Verifies staff, sub_admin, or super_admin via Authorization header.
+// Sets req.user to full Mongoose doc (consistent with verifyJWT).
+export const staffMiddleware = asyncHandler(async (req, res, next) => {
+  const token = req.header("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) {
+    return res.status(401).json({ message: "No token provided" });
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (!["staff", "sub_admin", "super_admin"].includes(decoded.role)) {
-      return res
-        .status(403)
-        .json({ message: "Access denied. Staff/Admin only." });
+      return res.status(403).json({ message: "Access denied. Staff/Admin only." });
     }
-    req.user = decoded;
+    // Load full user doc so req.user._id works in controllers
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) return res.status(401).json({ message: "User not found." });
+    req.user = user;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
+    return res.status(401).json({ message: "Invalid or expired token." });
   }
-};
+});
 
-// Verifies super_admin only
-export const superAdminMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "No token provided" });
+// ─── superAdminMiddleware ─────────────────────────────────────────────────────
+export const superAdminMiddleware = asyncHandler(async (req, res, next) => {
+  const token = req.header("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) {
+    return res.status(401).json({ message: "No token provided" });
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (decoded.role !== "super_admin") {
-      return res
-        .status(403)
-        .json({ message: "Access denied. Super admin only." });
+      return res.status(403).json({ message: "Access denied. Super admin only." });
     }
-    req.user = decoded;
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) return res.status(401).json({ message: "User not found." });
+    req.user = user;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
+    return res.status(401).json({ message: "Invalid or expired token." });
   }
-};
+});
 
-// Add Admin Access Middleware (Role Check)
-// To ensure regular customers cannot update order statuses, create or check src/middlewares/auth.middleware.js for an admin check
-// Admin / Staff Role Check (staff, sub_admin, super_admin can access kitchen routes)
+// ─── verifyAdmin ──────────────────────────────────────────────────────────────
+// Runs AFTER verifyJWT. Checks role on req.user (Mongoose doc).
 export const verifyAdmin = (req, res, next) => {
   const ADMIN_ROLES = ["staff", "sub_admin", "super_admin"];
   if (req.user && ADMIN_ROLES.includes(req.user.role)) {
-    next();
-  } else {
-    throw new ApiError(403, "Access denied. Staff or Admin resources only.");
+    return next();
   }
+  throw new ApiError(403, "Access denied. Staff or Admin only.");
 };
 
+// ─── authorizedRoles ──────────────────────────────────────────────────────────
+// Generic role-guard. Must run after verifyJWT.
 export const authorizedRoles = (...allowedRoles) => {
   return (req, _, next) => {
-    // 1. Verify that verifyJWT ran first and attached req.user
     if (!req.user) {
       throw new ApiError(401, "Authentication required before authorization.");
     }
-
-    // 2. Check if user's role is in the list of allowed roles, allowed roles = admin, agar user ka role admin hai toh usay access mil jayega if not then the access is denied
     if (!allowedRoles.includes(req.user.role)) {
       throw new ApiError(
         403,
-        `Access denied. Role '${req.user.role}' is not authorized to perform this action.`,
+        `Access denied. Role '${req.user.role}' is not authorized.`,
       );
     }
-
-    // 3. User is authorized, pass control to next middleware/controller
     next();
   };
 };

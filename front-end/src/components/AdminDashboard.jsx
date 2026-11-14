@@ -89,11 +89,13 @@ const AdminDashboard = () => {
           },
         });
         const data = await res.json();
+        // getCurrentUser wraps in ApiResponse: { data: { id, name, role, ... } }
+        const profile = data?.data || data;
 
         const ALLOWED_ROLES = ["staff", "sub_admin", "super_admin"];
 
         // Reject if token is invalid or server responds with a customer role
-        if (!res.ok || !data || !ALLOWED_ROLES.includes(data.role)) {
+        if (!res.ok || !profile || !ALLOWED_ROLES.includes(profile.role)) {
           localStorage.removeItem("vb_admin_token");
           localStorage.removeItem("vb_admin_user");
           navigate("/admin/login", { replace: true });
@@ -102,8 +104,8 @@ const AdminDashboard = () => {
 
         // Successfully verified
         setAdminToken(token);
-        setAdminUser(data);
-        localStorage.setItem("vb_admin_user", JSON.stringify(data));
+        setAdminUser(profile);
+        localStorage.setItem("vb_admin_user", JSON.stringify(profile));
         setVerifying(false);
       } catch (err) {
         console.error("Admin verification error:", err);
