@@ -3,6 +3,8 @@ import {
   createOrder,
   getMyOrders,
   cancelOrder,
+  confirmOrder,
+  reorderLastMeal,
   lockOrder,
   getAllOrders,
   getOrderStats,
@@ -20,9 +22,11 @@ orderRouter.use(verifyJWT);
 // =========================================================================
 // CUSTOMER ROUTES
 // =========================================================================
-orderRouter.post("/", createOrder);             // Place order from active cart
-orderRouter.get("/my-orders", getMyOrders);     // User's own order history
-orderRouter.patch("/:id/cancel", cancelOrder);  // Cancel within 5-minute window
+orderRouter.post("/", createOrder);                // Place order from active cart
+orderRouter.get("/my-orders", getMyOrders);        // User's own order history
+orderRouter.patch("/:id/cancel", cancelOrder);     // Cancel within 5-minute window
+orderRouter.patch("/:id/confirm", confirmOrder);   // Customer final-confirm (locks own order)
+orderRouter.post("/reorder", reorderLastMeal);     // Re-add last order items to cart
 
 // =========================================================================
 // ADMIN & KITCHEN STAFF ROUTES

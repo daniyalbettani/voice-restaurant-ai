@@ -3,6 +3,7 @@ import Home from "./Pages/home";
 import Admin from "./Pages/Admin";
 import AdminLogin from "./Pages/AdminLogin";
 import TrackOrders from "./Pages/TrackOrders";
+import OrderHistory from "./Pages/OrderHistory";
 import Navbar from "./components/Navbar";
 
 // 🔒 Protected Route Component for Staff/Admin Access
@@ -45,6 +46,16 @@ function App() {
           </div>
         }
       />
+      <Route
+        path="/order-history"
+        element={
+          <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+            <Navbar />
+            <OrderHistory />
+          </div>
+        }
+      />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

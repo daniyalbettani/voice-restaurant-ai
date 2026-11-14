@@ -273,3 +273,91 @@ export const bulkDeleteOrders = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, { deleted: ids.length }, `${ids.length} orders deleted`));
 });
+
+/**
+ * Customer Final Confirm — locks own PENDING order so chef can start immediately.
+ * This is customer-owned: ownership is verified, no admin role needed.
+ * PATCH /api/orders/:id/confirm
+ */
+export const confirmOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const order = await Order.findOne({ _id: id, user: req.user._id });
+  if (!order) throw new ApiError(404, "Order not found");
+
+  if (order.locked) {
+    throw new ApiError(400, "Order is already locked.");
+  }
+
+  if (order.orderStatus !== "PENDING") {
+    throw new ApiError(400, "Only PENDING orders can be confirmed.");
+  }
+
+  order.locked = true;
+  order.orderStatus = "PREPARING";
+  await order.save();
+
+  const io = req.app.get("io");
+  if (io) io.emit("orderUpdated", order);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, order, "Order confirmed! Chef is starting now."));
+});
+
+/**
+ * Reorder last meal — copies the most recent completed order items back into the cart.
+ * POST /api/orders/reorder
+ */
+export const reorderLastMeal = asyncHandler(async (req, res) => {
+  const { Menu } = await import("../models/Menu.js");
+
+  // Find the most recent non-cancelled order for this user
+  const lastOrder = await Order.findOne({
+    user: req.user._id,
+    orderStatus: { $ne: "CANCELLED" },
+  }).sort({ createdAt: -1 });
+
+  if (!lastOrder || lastOrder.items.length === 0) {
+    throw new ApiError(404, "No previous order found to reorder.");
+  }
+
+  // Find or create cart
+  let cart = await Cart.findOne({ user: req.user._id });
+  if (!cart) {
+    cart = new Cart({ user: req.user._id, items: [] });
+  }
+
+  // Add each item from last order into cart (merge quantities if already present)
+  for (const orderedItem of lastOrder.items) {
+    if (!orderedItem.menuItem) continue;
+
+    // Check the item is still on the menu and available
+    const menuItem = await Menu.findById(orderedItem.menuItem);
+    if (!menuItem || menuItem.available === false) continue;
+
+    const existingIdx = cart.items.findIndex(
+      (ci) => ci.menuItem.toString() === orderedItem.menuItem.toString()
+    );
+
+    if (existingIdx > -1) {
+      cart.items[existingIdx].quantity += orderedItem.quantity;
+    } else {
+      cart.items.push({ menuItem: orderedItem.menuItem, quantity: orderedItem.quantity });
+    }
+  }
+
+  // Recalculate total using live menu prices
+  let total = 0;
+  for (const item of cart.items) {
+    const dish = await Menu.findById(item.menuItem);
+    if (dish) total += Number(dish.price) * item.quantity;
+  }
+  cart.totalAmount = total;
+  await cart.save();
+  await cart.populate("items.menuItem");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, cart, "Last order added to your cart!"));
+});

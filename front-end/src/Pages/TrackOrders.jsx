@@ -133,7 +133,7 @@ const TrackOrdersPage = () => {
     )) return;
     try {
       const token = localStorage.getItem('vb_token');
-      const res  = await fetch(`${API}/api/orders/${orderId}/lock`, {
+      const res  = await fetch(`${API}/api/orders/${orderId}/confirm`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });

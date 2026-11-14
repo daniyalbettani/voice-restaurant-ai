@@ -142,6 +142,30 @@ const Navbar = ({ isAdmin = false }) => {
                 🚚 Track Orders
               </Link>
             )}
+
+            {/* Order History — all logged-in customers */}
+            {isLoggedIn && !isStaffOrAdmin && (
+              <Link
+                to="/order-history"
+                className="navbar-link"
+                style={{
+                  textDecoration: "none",
+                  color: "inherit",
+                  background: "rgba(99,102,241,0.10)",
+                  border: "1px solid rgba(99,102,241,0.25)",
+                  borderRadius: "8px",
+                  padding: "6px 14px",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  transition: "all 0.2s",
+                }}
+              >
+                📦 My Orders
+              </Link>
+            )}
           </div>
         )}
         {isAdmin && (
@@ -334,6 +358,16 @@ const Navbar = ({ isAdmin = false }) => {
               onClick={() => setMobileOpen(false)}
             >
               🚚 Track Orders
+            </Link>
+          )}
+          {isLoggedIn && !isStaffOrAdmin && (
+            <Link
+              to="/order-history"
+              className="mobile-link"
+              style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              onClick={() => setMobileOpen(false)}
+            >
+              📦 My Orders
             </Link>
           )}
           {!isLoggedIn && (
